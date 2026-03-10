@@ -371,7 +371,6 @@ class ToFCamera:
                 object_params[idx+12] = triangle.D
         
         distances, points = tfp.numba_process_all_rays(
-            rays_direction.shape[0],
             rays_start, rays_direction,
             object_type, object_params
         )
