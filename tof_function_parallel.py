@@ -47,32 +47,51 @@ def numba_sphere_intersect(
 @njit
 def numba_check_point_in_triangle(
     point_coords: np.ndarray, 
-    v0: np.ndarray, 
-    v1: np.ndarray, 
-    v2: np.ndarray
+    p1: np.ndarray, 
+    p2: np.ndarray, 
+    p3: np.ndarray,
+    normal: np.ndarray,
+    D: float
 ) -> bool:
-    def subtract(a, b):
-        return a - b
+    eps = 1e-10
+
+    x = point_coords[0]
+    y = point_coords[1]
+    z = point_coords[2]
     
-    v0v1 = subtract(v1, v0)
-    v0v2 = subtract(v2, v0)
-    v0p = subtract(point_coords, v0)
-    
-    d00 = np.dot(v0v1, v0v1)
-    d01 = np.dot(v0v1, v0v2)
-    d11 = np.dot(v0v2, v0v2)
-    d20 = np.dot(v0p, v0v1)
-    d21 = np.dot(v0p, v0v2)
-    
-    denom = d00 * d11 - d01 * d01
-    if abs(denom) < 1e-10:
+    A = normal[0]
+    B = normal[1]
+    C = normal[2]
+
+    check = A * x + B * y + C * z + D
+
+    if not np.allclose(check, 0, eps):
         return False
-    
-    v = (d11 * d20 - d01 * d21) / denom
-    w = (d00 * d21 - d01 * d20) / denom
-    u = 1.0 - v - w
-    
-    return (u >= -1e-10) and (v >= -1e-10) and (w >= -1e-10)
+
+    v1 = p2 - p1
+    v2 = p3 - p2
+    v3 = p1 - p3
+
+    v1_p = point_coords - p1
+    v2_p = point_coords - p2
+    v3_p = point_coords - p3
+
+    cross_1 = np.cross(v1, v1_p)
+    cross_2 = np.cross(v2, v2_p)
+    cross_3 = np.cross(v3, v3_p)
+
+    sign_1 = np.dot(cross_1, normal)
+    sign_2 = np.dot(cross_2, normal)
+    sign_3 = np.dot(cross_3, normal)
+
+    positive = (sign_1 > eps) or (sign_2 > eps) or (sign_3 > eps)
+    negative = (sign_1 < -eps) or (sign_2 < -eps) or (sign_3 < -eps)
+
+    if negative and positive:
+        return False
+
+    return True
+
 
 @njit
 def numba_triangle_intersect(
@@ -89,7 +108,7 @@ def numba_triangle_intersect(
     
     if abs(a) < 1e-10:
         if abs(b) < 1e-10:
-            if numba_check_point_in_triangle(ray_start, v0, v1, v2):
+            if numba_check_point_in_triangle(ray_start, v0, v1, v2, normal, D):
                 return ray_start, 0.0
             
             edges = [(v0, v1), (v1, v2), (v2, v0)]
@@ -107,7 +126,7 @@ def numba_triangle_intersect(
                     
                     if t >= -1e-10 and 0 <= u <= 1:
                         point = ray_start + t * ray_direction
-                        if numba_check_point_in_triangle(point, v0, v1, v2):
+                        if numba_check_point_in_triangle(point, v0, v1, v2, normal, D):
                             if t < t_min:
                                 t_min = t
                                 best_point = point
@@ -126,7 +145,7 @@ def numba_triangle_intersect(
         return None, -1.0
     
     point = ray_start + t * ray_direction
-    if numba_check_point_in_triangle(point, v0, v1, v2):
+    if numba_check_point_in_triangle(point, v0, v1, v2, normal, D):
         return point, t
     return None, -1.0
 
