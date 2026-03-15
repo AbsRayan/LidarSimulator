@@ -3,10 +3,10 @@ import matplotlib.pyplot as plt
 import laspy
 
 from geometry import Point, Sphere, Triangle, Figure, distance_to
-
 from pypcd4 import pypcd4
 
 import tof_function_parallel as tfp
+
 
 class Ray:
     """
@@ -326,8 +326,10 @@ class ToFCamera:
 
         plt.show()
 
-    def generate_rays_parallel(self):
-
+    def generate_rays_parallel(self) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Parallel version of generate rays.
+        """
         rays_start, rays_direction = tfp.numba_generate_rays(
             self.position.coords,
             self.direction,
@@ -337,9 +339,10 @@ class ToFCamera:
         )
         return rays_start, rays_direction
 
-    def get_points_and_distances_to_object_parallel(self, geo_object):
-
-
+    def get_points_and_distances_to_object_parallel(self, geo_object) -> None:
+        """
+        Parallel version of get points and distances to object.
+        """
         rays_start, rays_direction = self.generate_rays_parallel()
         
         if isinstance(geo_object, Sphere):

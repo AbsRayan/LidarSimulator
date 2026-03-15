@@ -141,18 +141,18 @@ def difficult_figure(camera: ToFCamera) -> None:
 if __name__ == "__main__":
     start = perf_counter()
 
-    figure = read_stl("low_poly_bear.stl")
+    figure = read_stl("Mig29.stl")
     figure_center = figure.get_center()
 
     tof_camera = ToFCamera(
-        position=Point(np.array([200, -20, 140])),
-        width=50,
-        height=50,
-        direction=figure_center.coords - np.array([200, -20, 140]),
+        position=Point(np.array([-50, 250, 300])),
+        width=100,
+        height=100,
+        direction=figure_center.coords - np.array([-50, 250, 300]),
         fov=60
     )
 
-    tof_camera.get_points_and_distances_to_object(figure)
+    tof_camera.get_points_and_distances_to_object_parallel(figure)
     tof_camera.visualize_depth_map()
     tof_camera.visualize_point_cloud()
 
