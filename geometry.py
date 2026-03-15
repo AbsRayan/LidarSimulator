@@ -1,4 +1,6 @@
 import numpy as np
+import trimesh
+import fast_simplification
 
 
 class Point:
@@ -37,7 +39,6 @@ class Sphere:
     def __init__(self, R: float, center: Point) -> None:
         self.R = R
         self.center = center
-
 
 class Triangle:
     """
@@ -153,6 +154,52 @@ class Figure:
 
         center = np.mean(np.array(all_vertices), axis=0)
         return Point(center)
+    
+    def reduce_number_of_triangles(self, coeff: float) -> None:
+        """
+        Reduce number of triangles in Figure.
+
+        Args:
+            coeff: reduce coefficient.
+        """
+        verctices = []
+        faces = []
+        vertex_index = {}
+
+        for triangle in self.triangles:
+            face_vertices = []
+            for vertex in triangle.vertices:
+                coords_tuple = tuple(vertex.coords)
+
+                if coords_tuple not in vertex_index:
+                    vertex_index[coords_tuple] = len(verctices)
+                    verctices.append(vertex.coords)
+
+                face_vertices.append(vertex_index[coords_tuple])
+            
+            faces.append(face_vertices)
+        
+        mesh = trimesh.Trimesh(verctices, faces)
+
+        reduced_vertices, reduced_faces = fast_simplification.simplify(
+            mesh.vertices,
+            mesh.faces,
+            coeff
+        )
+
+        reduced_mesh = trimesh.Trimesh(reduced_vertices, reduced_faces)
+
+        reduced_triangles = []
+
+        for face in reduced_mesh.faces:
+            p1 = Point(reduced_mesh.vertices[face[0]])
+            p2 = Point(reduced_mesh.vertices[face[1]])
+            p3 = Point(reduced_mesh.vertices[face[2]])
+
+            triangle = Triangle(p1, p2, p3)
+            reduced_triangles.append(triangle)
+    
+        self._triangles = reduced_triangles
 
 
 def distance_to(p1: Point, p2: Point) -> float:
