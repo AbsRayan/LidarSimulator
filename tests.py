@@ -7,7 +7,7 @@ from geometry import Triangle, Point, Sphere, Figure
 from time import perf_counter
 
 
-def read_stl(stl_file: str) -> Figure:
+def read_stl(stl_file: str, use_octree: bool = False) -> Figure:
     """
     Read stl to the figure.
 
@@ -36,7 +36,7 @@ def read_stl(stl_file: str) -> Figure:
 
     print(f"triangles count = {counter}")
 
-    return Figure(triangles)
+    return Figure(triangles, use_octree)
 
 
 def simple_pyramid(camera: ToFCamera) -> None:
@@ -141,21 +141,32 @@ def difficult_figure(camera: ToFCamera) -> None:
 if __name__ == "__main__":
     start = perf_counter()
 
-    figure = read_stl("Mig29.stl")
+    figure = read_stl("Mig29.stl", use_octree=True)
     figure_center = figure.get_center()
 
     tof_camera = ToFCamera(
-        position=Point(np.array([-50, 250, 300])),
+        position=Point(np.array([-50.0, 250.0, 300.0], dtype=np.float64)),
         width=100,
         height=100,
-        direction=figure_center.coords - np.array([-50, 250, 300]),
+        direction=figure_center.coords - np.array([-50.0, 250.0, 300.0], dtype=np.float64),
         fov=60
     )
 
-    tof_camera.get_points_and_distances_to_object_parallel(figure)
+    tof_camera.get_points_and_distances_to_object(figure, parallel=False, use_octree=True)
+
+    end = perf_counter()
+    print(f"total time = {end - start}")
+
     tof_camera.visualize_depth_map()
     tof_camera.visualize_point_cloud()
 
-    end = perf_counter()
+    """
+    Model: Mig29.stl
+    Triangles amount: 4348
 
-    print(f"total time = {end - start}")
+    Times (in seconds) :
+        Sequential program: 2892.355886799982 (~48 min)
+        Parallel program: 19.3167747000698
+        Sequential octree program: 6.491295399959199
+
+    """
