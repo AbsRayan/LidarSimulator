@@ -2,6 +2,8 @@ import numpy as np
 import trimesh
 import fast_simplification
 
+from oct_tree import Octree
+
 
 class Point:
     """
@@ -136,8 +138,16 @@ class Figure:
     Class for representing figure in 3D, which consists of 
     triangles.
     """
-    def __init__(self, triangles: list[Triangle]) -> None:
+    def __init__(
+        self, 
+        triangles: list[Triangle], 
+        use_octree: bool = False
+    ) -> None:
         self._triangles = triangles
+        self.root = None
+
+        if use_octree:
+            self.root = Octree(triangles)
 
     @property
     def triangles(self) -> list[Triangle]:

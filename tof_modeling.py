@@ -130,15 +130,22 @@ class Ray:
             
         return None
     
-    def get_nearest_point_of_figure(self, figure: Figure) -> Point | None:
+    def get_nearest_point_of_figure(self, figure: Figure, use_octree: bool= False) -> Point | None:
         """
         Method for getting nearest point of figure.
 
         Args:
             figure: figure which consists of triangles.
+            use_octree: bool flag for using octree.
 
         Returns: The nearest point of figure.
         """
+        if use_octree and figure.root is not None:
+            p, _ = figure.root.ray_intersect(self.start.coords, self.direction)
+            if p is not None:
+                return Point(p)
+            return None
+
         nearest_point = None
         nearest_dist = np.inf
 
@@ -220,7 +227,12 @@ class ToFCamera:
 
         return rays
     
-    def get_points_and_distances_to_object(self, geo_object: Sphere | Triangle | Figure) -> None:
+    def get_points_and_distances_to_object(
+        self, 
+        geo_object: Sphere | Triangle | Figure,
+        parallel: bool = False,
+        use_octree: bool = False
+    ) -> None:
         """
         Method for getting points of the geo object and distances to the geo object.
 
@@ -228,6 +240,12 @@ class ToFCamera:
             geo_object: object for which distances are calculated.
 
         """
+        if parallel:
+            if use_octree and type(geo_object) == Figure:
+                self._get_points_and_distances_to_object_parallel_octree(geo_object)
+            else:
+                self._get_points_and_distances_to_object_parallel(geo_object)
+            return
         distances = []
         points = []
         for ray in self.generate_rays():
@@ -236,7 +254,7 @@ class ToFCamera:
             elif type(geo_object) == Triangle:
                 point = ray.triangle_intersect(geo_object)
             else:
-                point = ray.get_nearest_point_of_figure(geo_object)
+                point = ray.get_nearest_point_of_figure(geo_object, use_octree)
 
             if point is None:
                 distances.append(np.nan)
@@ -263,7 +281,6 @@ class ToFCamera:
             raise ValueError("Distances were not calculated")
         times = 2 * self.object_distances / c
         return times
-        
 
     def visualize_depth_map(self) -> None:
         """
@@ -326,7 +343,7 @@ class ToFCamera:
 
         plt.show()
 
-    def generate_rays_parallel(self) -> tuple[np.ndarray, np.ndarray]:
+    def _generate_rays_parallel(self) -> tuple[np.ndarray, np.ndarray]:
         """
         Parallel version of generate rays.
         """
@@ -339,11 +356,11 @@ class ToFCamera:
         )
         return rays_start, rays_direction
 
-    def get_points_and_distances_to_object_parallel(self, geo_object) -> None:
+    def _get_points_and_distances_to_object_parallel(self, geo_object) -> None:
         """
         Parallel version of get points and distances to object.
         """
-        rays_start, rays_direction = self.generate_rays_parallel()
+        rays_start, rays_direction = self._generate_rays_parallel()
         
         if isinstance(geo_object, Sphere):
             object_type = 0
@@ -382,6 +399,12 @@ class ToFCamera:
         
         valid_mask = ~np.isnan(points[:, 0])
         self.object_points = points[valid_mask]
+
+    def _get_points_and_distances_to_object_parallel_octree(
+        self, 
+        figure: Figure
+    ) -> None:
+        pass
 
     def write_pcd(self) -> None:
         """
@@ -430,6 +453,6 @@ if __name__ == "__main__":
         Point(np.array([0, 0.5, 2]))
     )
 
-    tof_camera.get_points_and_distances_to_object_parallel(triangle)
+    tof_camera.get_points_and_distances_to_object(triangle)
     tof_camera.visualize_depth_map()
     tof_camera.visualize_point_cloud()
