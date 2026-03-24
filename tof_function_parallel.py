@@ -103,6 +103,7 @@ def numba_triangle_intersect(
     normal: np.ndarray, 
     D: float
 ) -> tuple[np.ndarray | None, float]:
+    normal = normal.astype(np.float64)
     a = np.dot(ray_direction, normal)
     b = -D - np.dot(ray_start, normal)
     
