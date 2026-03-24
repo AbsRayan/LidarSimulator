@@ -141,7 +141,7 @@ def difficult_figure(camera: ToFCamera) -> None:
 if __name__ == "__main__":
     start = perf_counter()
 
-    figure = read_stl("Mig29.stl", use_octree=True)
+    figure = read_stl("stl_models/Mig29.stl", use_octree=True)
     figure_center = figure.get_center()
 
     tof_camera = ToFCamera(
