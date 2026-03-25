@@ -1,42 +1,9 @@
 import numpy as np
 
-import stl_reader
 from tof_modeling import ToFCamera
 from geometry import Triangle, Point, Sphere, Figure
 
 from time import perf_counter
-
-
-def read_stl(stl_file: str, use_octree: bool = False) -> Figure:
-    """
-    Read stl to the figure.
-
-    Args:
-        stl_file: file name of stl
-
-    Returns: figure which consists of triangles.
-    """
-    vertices, index = stl_reader.read(stl_file)
-    triangles = []
-
-    counter = 0
-
-    for ind in index:
-        ind1, ind2, ind3 = ind
-
-        v1 = Point(vertices[ind1])
-        v2 = Point(vertices[ind2])
-        v3 = Point(vertices[ind3])
-
-        triangle = Triangle(v1, v2, v3)
-
-        counter += 1
-
-        triangles.append(triangle)
-
-    print(f"triangles count = {counter}")
-
-    return Figure(triangles, use_octree)
 
 
 def simple_pyramid(camera: ToFCamera) -> None:
@@ -141,7 +108,7 @@ def difficult_figure(camera: ToFCamera) -> None:
 if __name__ == "__main__":
     start = perf_counter()
 
-    figure = read_stl("stl_models/Mig29.stl", use_octree=True)
+    figure = Figure(file="stl_models/Mig29.stl", use_octree=True)
     figure_center = figure.get_center()
 
     tof_camera = ToFCamera(

@@ -1,6 +1,7 @@
 import numpy as np
 import trimesh
 import fast_simplification
+import stl_reader
 
 from oct_tree import Octree
 
@@ -139,15 +140,21 @@ class Figure:
     triangles.
     """
     def __init__(
-        self, 
-        triangles: list[Triangle], 
+        self,
+        file: str = "",
+        triangles: list[Triangle] = [], 
         use_octree: bool = False
     ) -> None:
-        self._triangles = triangles
+        self._triangles = None
         self.root = None
 
+        if triangles:
+            self._triangles = triangles
+        elif file:
+            self.read_stl(file)
+
         if use_octree:
-            self.root = Octree(triangles)
+            self.root = Octree(self._triangles)
 
     @property
     def triangles(self) -> list[Triangle]:
@@ -211,6 +218,35 @@ class Figure:
     
         self._triangles = reduced_triangles
 
+        
+    def read_stl(self, stl_file: str) -> None:
+        """
+        Read stl to the figure.
+
+        Args:
+            stl_file: file name of stl.
+        """
+        vertices, index = stl_reader.read(stl_file)
+        triangles = []
+
+        counter = 0
+
+        for ind in index:
+            ind1, ind2, ind3 = ind
+
+            v1 = Point(vertices[ind1])
+            v2 = Point(vertices[ind2])
+            v3 = Point(vertices[ind3])
+
+            triangle = Triangle(v1, v2, v3)
+
+            counter += 1
+
+            triangles.append(triangle)
+
+        print(f"triangles count = {counter}")
+
+        self._triangles = triangles
 
 def distance_to(p1: Point, p2: Point) -> float:
     """
