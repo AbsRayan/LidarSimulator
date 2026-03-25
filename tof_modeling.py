@@ -297,14 +297,13 @@ class ToFCamera:
         
         if np.all(np.isnan(depth_map)):
             masked_depth = np.ma.masked_where(np.ones_like(depth_map, dtype=bool), depth_map)
-            map = axis.imshow(masked_depth, cmap='plasma_r')
+            axis.imshow(masked_depth, cmap='plasma_r')
         else:
-            map = axis.imshow(depth_map, cmap='plasma_r', vmin=np.nanmin(depth_map), vmax=np.nanmax(depth_map))
+            axis.imshow(depth_map, cmap='plasma_r', vmin=np.nanmin(depth_map), vmax=np.nanmax(depth_map))
 
-        axis.set_title('ToF camera depth map')
         axis.axis("image")
         axis.grid(False)
-        figure.colorbar(map, ax=axis, label='Distance to camera')
+        axis.axis("off")
 
         plt.show()
 
@@ -457,6 +456,6 @@ if __name__ == "__main__":
         Point(np.array([0, 0.5, 2]))
     )
 
-    tof_camera.get_points_and_distances_to_object(triangle)
+    tof_camera.get_points_and_distances_to_object(triangle, use_octree=True)
     tof_camera.visualize_depth_map()
     tof_camera.visualize_point_cloud()
