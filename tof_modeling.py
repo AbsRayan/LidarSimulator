@@ -405,6 +405,51 @@ class ToFCamera:
     ) -> None:
         pass
 
+    def get_points_and_distances_to_scene(
+        self,
+        figures: list[Triangle | Sphere | Figure],
+        use_octree: bool = False
+    ) -> None:
+        """
+        Get points and distances to all objects on the scene.
+
+        Args:
+            figure: list of object on the scene.
+
+        """
+        points = []
+        distances = []
+
+        for ray in self.generate_rays():
+            nearest_point = None
+            nearest_dist = np.inf
+
+            for figure in figures:
+                if type(figure) == Sphere:
+                    point = ray.sphere_intersect(figure)
+                elif type(figure) == Triangle:
+                    point = ray.triangle_intersect(figure)
+                else:
+                    point = ray.get_nearest_point_of_figure(figure, use_octree)
+
+                if point is not None:
+                    dist = distance_to(point, self.position)
+                    if dist < nearest_dist:
+                        nearest_dist = dist
+                        nearest_point = point
+
+            if nearest_point is None:
+                distances.append(np.nan)
+            else:
+                distances.append(nearest_dist)
+                points.append(nearest_point.coords)
+
+        result_distances = np.array(distances)
+        result_points = np.array(points) if points else np.array([])
+
+        self.object_points = result_points 
+        self.object_distances = result_distances
+
     def write_pcd(self) -> None:
         """
         Write point cloud in pcd format.
@@ -438,24 +483,32 @@ class ToFCamera:
 
 if __name__ == "__main__":
     tof_camera = ToFCamera(
-        position=Point(np.array([0.0, 0.0, 0.0])),
-        width=100,
-        height=100,
+        position=Point(np.array([0.0, 0.0, -2.0])),
+        width=200,
+        height=200,
         direction=np.array([0.0, 0.0, 1.0]),
         fov=60
     )
 
     sphere = Sphere(
-        R=3,
+        R=2,
         center=Point(np.array([0, 0, 6]))
     )
 
-    triangle = Triangle(
-        Point(np.array([-0.5, -0.5, 1])),
+    triangle_1 = Triangle(
+        Point(np.array([-0.5, -1, 0])),
         Point(np.array([0.5, -0.5, 1])),
-        Point(np.array([0, 0.5, 2]))
+        Point(np.array([0, 0.5, 3]))
     )
 
-    tof_camera.get_points_and_distances_to_object(triangle, use_octree=True)
+    triangle_2 = Triangle(
+        Point(np.array([0.5, 0.5, 0])),
+        Point(np.array([0, 0.5, 0])),
+        Point(np.array([0.5, 0.5, 2]))
+    )
+
+    scene = [sphere, triangle_1, triangle_2]
+
+    tof_camera.get_points_and_distances_to_scene(scene, use_octree=True)
     tof_camera.visualize_depth_map()
     tof_camera.visualize_point_cloud()
