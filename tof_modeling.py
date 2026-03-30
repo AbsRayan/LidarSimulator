@@ -450,16 +450,19 @@ class ToFCamera:
         self.object_points = result_points 
         self.object_distances = result_distances
 
-    def write_pcd(self) -> None:
+    def write_point_cloud_pcd(self, file: str = "point_cloud.pcd") -> None:
         """
         Write point cloud in pcd format.
+
+        Args:
+            file: name of new file.
         """
         if self.object_points is None:
             raise ValueError("Points were not calculated")
         pc = pypcd4.PointCloud.from_xyz_points(self.object_points)
-        pc.save("point_cloud.pcd")
+        pc.save(file)
 
-    def read_pcd(self, file: str) -> None:
+    def read_point_cloud_pcd(self, file: str) -> None:
         """
         Read point cloud from pcd file.
 
@@ -471,9 +474,12 @@ class ToFCamera:
             (pcd.pc_data['x'], pcd.pc_data['y'], pcd.pc_data['z'])
         )
 
-    def write_las(self) -> None:
+    def write_point_cloud_las(self, file: str = "point_cloud.las") -> None:
         """
         Write point cloud in las format.
+
+        Args:
+            file: name of new file.
         """
         if self.object_points is None:
             raise ValueError("Points were not calculated")
@@ -487,9 +493,9 @@ class ToFCamera:
         las.y = self.object_points[:, 1]
         las.z = self.object_points[:, 2]
 
-        las.write("point_cloud.las")
+        las.write(file)
 
-    def read_las(self, file: str) -> None:
+    def read_point_cloud_las(self, file: str) -> None:
         """
         Read point cloud from las file.
 
@@ -498,6 +504,27 @@ class ToFCamera:
         """
         las = laspy.read(file)
         self.object_points = np.column_stack((las.x, las.y, las.z))
+
+    def write_distances_txt(self, file: str = "distances.txt") -> None:
+        """
+        Write distances in txt file.
+
+        Args:
+            file: name of new file.
+        """
+        if self.object_distances is None:
+            raise ValueError("Distances were not calculated")
+
+        np.savetxt(file, self.object_distances)
+
+    def read_distances_txt(self, file: str) -> None:
+        """
+        Read distances from txt file.
+
+        Args:
+            file: name of file with distances.
+        """
+        self.object_distances = np.loadtxt(file)
 
     @property
     def distances_and_points(self) -> tuple[np.ndarray | None, np.ndarray | None]:
