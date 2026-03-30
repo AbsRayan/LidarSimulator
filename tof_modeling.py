@@ -459,6 +459,18 @@ class ToFCamera:
         pc = pypcd4.PointCloud.from_xyz_points(self.object_points)
         pc.save("point_cloud.pcd")
 
+    def read_pcd(self, file: str) -> None:
+        """
+        Read point cloud from pcd file.
+
+        Args:
+            file: name of point cloud file.
+        """
+        pcd = pypcd4.PointCloud.from_path(file)
+        self.object_points = np.column_stack(
+            (pcd.pc_data['x'], pcd.pc_data['y'], pcd.pc_data['z'])
+        )
+
     def write_las(self) -> None:
         """
         Write point cloud in las format.
@@ -476,6 +488,16 @@ class ToFCamera:
         las.z = self.object_points[:, 2]
 
         las.write("point_cloud.las")
+
+    def read_las(self, file: str) -> None:
+        """
+        Read point cloud from las file.
+
+        Args:
+            file: name of point cloud file.
+        """
+        las = laspy.read(file)
+        self.object_points = np.column_stack((las.x, las.y, las.z))
 
     @property
     def distances_and_points(self) -> tuple[np.ndarray | None, np.ndarray | None]:
