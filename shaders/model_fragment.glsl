@@ -5,12 +5,24 @@ in vec3 Normal;
 in vec4 FragPos;
 in vec4 BaseColor;
 
+in vec2 TexCoord;
+
 uniform sampler2D projectorTexture;
 uniform bool useProjector;
+
+uniform sampler2D baseTexture;
+uniform bool useBaseTexture;
 
 out vec4 FragColor;
 
 void main() {
+    // Базовый цвет и текстура
+    vec4 bColor = BaseColor;
+    if (useBaseTexture) {
+        vec4 texColor = texture(baseTexture, TexCoord);
+        bColor = bColor * texColor;
+    }
+
     // Освещение
     vec3 n = normalize(Normal);
     vec3 lightPos = gl_LightSource[0].position.xyz;
@@ -22,10 +34,10 @@ void main() {
     }
     float diff = max(dot(n, l), 0.0);
     
-    vec4 ambient = BaseColor * 0.4;
-    vec4 diffuse = BaseColor * diff * 0.8;
+    vec4 ambient = bColor * 0.7; // сильно увеличиваем базовое (затененное) освещение
+    vec4 diffuse = bColor * diff * 0.5; // сглаживаем резкие тени
     vec4 finalColor = ambient + diffuse;
-    finalColor.a = BaseColor.a;
+    finalColor.a = bColor.a;
     
     // Проекция
     if (useProjector) {

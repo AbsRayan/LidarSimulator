@@ -6,9 +6,13 @@ out vec4 ProjCoords;
 out vec3 Normal;
 out vec4 FragPos;
 out vec4 BaseColor;
+out vec2 TexCoord;
 
 void main() {
     gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex;
+    
+    // Текстурные координаты (из glTexCoord2f)
+    TexCoord = gl_MultiTexCoord0.xy;
     
     // Вычисляем координаты проекции из локальных координат модели
     ProjCoords = projectorMatrix * gl_Vertex;
