@@ -3,9 +3,11 @@ OpenGL-виджет для отрисовки 3D сцены.
 """
 import os
 import ctypes
+import math
 
 import numpy as np
 import stl_loader
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QImage
 from PyQt6.QtOpenGLWidgets import QOpenGLWidget
 from OpenGL.GL import *
@@ -47,17 +49,27 @@ class SceneGLWidget(QOpenGLWidget):
         super().__init__(parent)
         
         # Положение камеры (для gluLookAt)
-        self.camera_pos = [0.0, 0.0, 8.0]
         self.camera_target = [0.0, 0.0, 0.0]
+        self.camera_distance = 15.0
+        self.camera_yaw = 45.0
+        self.camera_pitch = 30.0
+        self.camera_pos = [0.0, 0.0, 8.0]
+        self.last_mouse_pos = None
+
+        self._update_camera_from_angles()
 
         # Параметры перспективы (можно обновить через apply_camera_config)
         self.cam_fov = 45.0
         self.cam_near = 0.1
         self.cam_far = 100.0
 
-        # Позиции объектов в сцене (X, Y, Z)
-        self.sphere_pos = [-2.0, 0.0, 0.0]
-        self.airplane_pos = [2.0, 0.0, 0.0]
+        # Позиция объектов в сцене (X, Y, Z)
+        self.airplane_pos = [22.0, 0.0, 0.0]
+        self.airplane_rot = [-90.0, 0.0, 0.0]  # Вращение (Yaw, Pitch, Roll)
+        
+        # Позиция и направление ToF-камеры (X, Y, Z)
+        self.tof_pos = [0.0, 5.0, 10.0]
+        self.tof_dir = [0.0, -5.0, -10.0]
 
         # OpenGL ресурсы (создаются в initializeGL)
         self.quadric = None
@@ -71,6 +83,9 @@ class SceneGLWidget(QOpenGLWidget):
         self.fbo_width = 800
         self.fbo_height = 600
 
+        # Точки ToF камеры
+        self.tof_points = None
+
         # Шейдер и fullscreen quad
         self.shader_program = None
         self.model_shader_program = None
@@ -79,11 +94,52 @@ class SceneGLWidget(QOpenGLWidget):
 
         # Текстура проектора
         self.projector_texture = None
-        self.texture_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'base_texture.png')
+        self.texture_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'textures', 'base_texture.png')
+
+        # Текстура земли
+        self.ground_texture = None
+        self.ground_texture_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'textures', 'ground.jpg')
+
+        # Текстура взлетной полосы
+        self.road_texture = None
+        self.road_texture_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'textures', 'road.png')
+
+        # Текстура площадки (field) в конце полосы
+        self.field_texture = None
+        self.field_texture_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'textures', 'field.jpg')
+
+        # Текстуры зданий
+        self.building1_texture = None
+        self.building1_texture_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'textures', 'building.jpg')
+        self.building2_texture = None
+        self.building2_texture_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'textures', 'building2.jpg')
+
+        # Текстура самолета (фиксированная)
+        self.airplane_texture = None
+        self.airplane_texture_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'textures', 'MiG29.png')
 
         # Загрузка STL-модели
         self.airplane_mesh = stl_loader.load_stl('models/Mig29.stl')
         self.airplane_loaded = self.airplane_mesh is not None
+
+    def _update_camera_from_angles(self):
+        rad_yaw = math.radians(self.camera_yaw)
+        rad_pitch = math.radians(self.camera_pitch)
+        
+        x = self.camera_target[0] + self.camera_distance * math.cos(rad_pitch) * math.sin(rad_yaw)
+        y = self.camera_target[1] + self.camera_distance * math.sin(rad_pitch)
+        z = self.camera_target[2] + self.camera_distance * math.cos(rad_pitch) * math.cos(rad_yaw)
+        self.camera_pos = [x, y, z]
+
+    def _update_angles_from_camera(self):
+        dx = self.camera_pos[0] - self.camera_target[0]
+        dy = self.camera_pos[1] - self.camera_target[1]
+        dz = self.camera_pos[2] - self.camera_target[2]
+        
+        self.camera_distance = math.sqrt(dx*dx + dy*dy + dz*dz)
+        if self.camera_distance > 0.0001:
+            self.camera_pitch = math.degrees(math.asin(max(-1.0, min(1.0, dy / self.camera_distance))))
+            self.camera_yaw = math.degrees(math.atan2(dx, dz))
 
 
     def initializeGL(self):
@@ -94,6 +150,18 @@ class SceneGLWidget(QOpenGLWidget):
         self._create_fbo(self.width() or 800, self.height() or 600)
         if self.projector_texture is None:
             self.projector_texture = self._load_texture(self.texture_path)
+        if self.ground_texture is None:
+            self.ground_texture = self._load_texture(self.ground_texture_path, wrap=GL_REPEAT)
+        if self.road_texture is None:
+            self.road_texture = self._load_texture(self.road_texture_path, wrap=GL_REPEAT)
+        if self.field_texture is None:
+            self.field_texture = self._load_texture(self.field_texture_path, wrap=GL_REPEAT)
+        if self.building1_texture is None:
+            self.building1_texture = self._load_texture(self.building1_texture_path, wrap=GL_REPEAT)
+        if self.building2_texture is None:
+            self.building2_texture = self._load_texture(self.building2_texture_path, wrap=GL_REPEAT)
+        if self.airplane_texture is None:
+            self.airplane_texture = self._load_texture(self.airplane_texture_path, wrap=GL_REPEAT)
 
     def _init_scene_resources(self):
         """Инициализация ресурсов для 3D-сцены"""
@@ -101,10 +169,19 @@ class SceneGLWidget(QOpenGLWidget):
             gluDeleteQuadric(self.quadric)
         self.quadric = gluNewQuadric()
 
-        glClearColor(0.3, 0.3, 0.3, 1.0)
+        glClearColor(0.4, 0.5, 0.6, 1.0) # Сделаем фон приятным (серо-голубым вместо темно-серого)
         glEnable(GL_DEPTH_TEST)
         glEnable(GL_LIGHTING)
         glEnable(GL_LIGHT0)
+        
+        # Общее фоновое освещение (делает тени мягче и ярче)
+        glLightModelfv(GL_LIGHT_MODEL_AMBIENT, [0.7, 0.7, 0.7, 1.0])
+        
+        # Настраиваем сам источник света
+        glLightfv(GL_LIGHT0, GL_AMBIENT, [0.6, 0.6, 0.6, 1.0])
+        glLightfv(GL_LIGHT0, GL_DIFFUSE, [0.9, 0.9, 0.9, 1.0])
+        glLightfv(GL_LIGHT0, GL_SPECULAR, [1.0, 1.0, 1.0, 1.0])
+        
         glEnable(GL_COLOR_MATERIAL)
         glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE)
 
@@ -160,8 +237,8 @@ class SceneGLWidget(QOpenGLWidget):
         glBindFramebuffer(GL_FRAMEBUFFER, 0)
 
 
-    def _load_texture(self, file_path):
-        """Загружает текстуру из файла для проектора."""
+    def _load_texture(self, file_path, wrap=GL_CLAMP_TO_BORDER):
+        """Загружает текстуру из файла."""
         img = QImage(file_path)
         if img.isNull():
             print(f"Failed to load image: {file_path}")
@@ -178,9 +255,10 @@ class SceneGLWidget(QOpenGLWidget):
         tex_id = glGenTextures(1)
         glBindTexture(GL_TEXTURE_2D, tex_id)
         
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER)
-        glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, [0.0, 0.0, 0.0, 0.0])
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap)
+        if wrap == GL_CLAMP_TO_BORDER:
+            glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, [0.0, 0.0, 0.0, 0.0])
         
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
@@ -190,7 +268,7 @@ class SceneGLWidget(QOpenGLWidget):
         
         return tex_id
 
-    def _get_projector_matrix(self, is_airplane=False):
+    def _get_projector_matrix(self):
         """Вычисляет матрицу проектора для переданного объекта (в локальных координатах объекта)"""
         glMatrixMode(GL_PROJECTION)
         glPushMatrix()
@@ -210,10 +288,10 @@ class SceneGLWidget(QOpenGLWidget):
         
         # Перенос из локальных координат модели в мировые, 
         # чтобы координаты вершин совпадали с пространством проектора.
-        if is_airplane:
-            glTranslatef(self.airplane_pos[0], self.airplane_pos[1], self.airplane_pos[2])
-        else:
-            glTranslatef(self.sphere_pos[0], self.sphere_pos[1], self.sphere_pos[2])
+        glTranslatef(self.airplane_pos[0], self.airplane_pos[1], self.airplane_pos[2])
+        glRotatef(self.airplane_rot[0], 0.0, 1.0, 0.0)
+        glRotatef(self.airplane_rot[1], 1.0, 0.0, 0.0)
+        glRotatef(self.airplane_rot[2], 0.0, 0.0, 1.0)
             
         proj_matrix = glGetFloatv(GL_PROJECTION_MATRIX)
         
@@ -222,7 +300,88 @@ class SceneGLWidget(QOpenGLWidget):
         
         return proj_matrix
 
+
+    def _draw_building(self, x, y, z, w=4.0, d=4.0, h=5.0, color=(0.6, 0.6, 0.6), texture=None):
+        """Рисует простой прямоугольный ящик (здание) с центром основания в (x, y, z)."""
+        x0, x1 = x - w / 2, x + w / 2
+        y0, y1 = y,         y + h
+        z0, z1 = z - d / 2, z + d / 2
+
+        r, g, b = color
+
+        glPushMatrix()
+        glColor3f(r, g, b)
+
+        use_tex = texture is not None
+        if use_tex:
+            glEnable(GL_TEXTURE_2D)
+            glBindTexture(GL_TEXTURE_2D, texture)
+        else:
+            glDisable(GL_TEXTURE_2D)
+
+        glBegin(GL_QUADS)
+        # Передняя грань
+        glNormal3f(0, 0, 1)
+        if use_tex: glTexCoord2f(0, 0)
+        glVertex3f(x0, y0, z1)
+        if use_tex: glTexCoord2f(1, 0)
+        glVertex3f(x1, y0, z1)
+        if use_tex: glTexCoord2f(1, 1)
+        glVertex3f(x1, y1, z1)
+        if use_tex: glTexCoord2f(0, 1)
+        glVertex3f(x0, y1, z1)
+        # Задняя грань
+        glNormal3f(0, 0, -1)
+        if use_tex: glTexCoord2f(0, 0)
+        glVertex3f(x1, y0, z0)
+        if use_tex: glTexCoord2f(1, 0)
+        glVertex3f(x0, y0, z0)
+        if use_tex: glTexCoord2f(1, 1)
+        glVertex3f(x0, y1, z0)
+        if use_tex: glTexCoord2f(0, 1)
+        glVertex3f(x1, y1, z0)
+        # Левая грань
+        glNormal3f(-1, 0, 0)
+        if use_tex: glTexCoord2f(0, 0)
+        glVertex3f(x0, y0, z0)
+        if use_tex: glTexCoord2f(1, 0)
+        glVertex3f(x0, y0, z1)
+        if use_tex: glTexCoord2f(1, 1)
+        glVertex3f(x0, y1, z1)
+        if use_tex: glTexCoord2f(0, 1)
+        glVertex3f(x0, y1, z0)
+        # Правая грань
+        glNormal3f(1, 0, 0)
+        if use_tex: glTexCoord2f(0, 0)
+        glVertex3f(x1, y0, z1)
+        if use_tex: glTexCoord2f(1, 0)
+        glVertex3f(x1, y0, z0)
+        if use_tex: glTexCoord2f(1, 1)
+        glVertex3f(x1, y1, z0)
+        if use_tex: glTexCoord2f(0, 1)
+        glVertex3f(x1, y1, z1)
+        glEnd()
+
+        # Крыша (тёмная, без текстуры)
+        if use_tex:
+            glDisable(GL_TEXTURE_2D)
+            
+        glBegin(GL_QUADS)
+        glNormal3f(0, 1, 0)
+        glColor3f(0.2, 0.2, 0.2)
+        glVertex3f(x0, y1, z0); glVertex3f(x0, y1, z1)
+        glVertex3f(x1, y1, z1); glVertex3f(x1, y1, z0)
+        glEnd()
+
+        if use_tex:
+            glBindTexture(GL_TEXTURE_2D, 0)
+            glDisable(GL_TEXTURE_2D)
+
+        glPopMatrix()
+
+
     def _create_shader(self):
+
         """Компиляция шейдерной программы"""
         vertex = gl_shaders.compileShader(VERTEX_SHADER_SRC, GL_VERTEX_SHADER)
         fragment = gl_shaders.compileShader(FRAGMENT_SHADER_SRC, GL_FRAGMENT_SHADER)
@@ -297,6 +456,103 @@ class SceneGLWidget(QOpenGLWidget):
 
         glLightfv(GL_LIGHT0, GL_POSITION, (5, 5, -5, 1))
 
+        # Отрисовка плоскости (пола) с текстурой до включения шейдера
+        glPushMatrix()
+        glTranslatef(0.0, -0.3, 0.0) # подогнали высоту пола под шасси самолета
+        
+        # Включаем текстурирование
+        glEnable(GL_TEXTURE_2D)
+        if self.ground_texture is not None:
+            glBindTexture(GL_TEXTURE_2D, self.ground_texture)
+            glColor3f(1.0, 1.0, 1.0) # белый цвет, чтобы не было затемнения текстуры
+        else:
+            glBindTexture(GL_TEXTURE_2D, 0)
+            glColor3f(0.35, 0.35, 0.35)
+
+        # Сплошной пол
+        glBegin(GL_QUADS)
+        glNormal3f(0.0, 1.0, 0.0)
+        
+        ground_size = 100.0
+        tiles = ground_size / 3.0 # Сохраняем масштаб текстуры (3 единицы на тайл)
+        
+        glTexCoord2f(0.0, 0.0); glVertex3f(-ground_size, 0.0, -ground_size)
+        glTexCoord2f(0.0, tiles); glVertex3f(-ground_size, 0.0,  ground_size)
+        glTexCoord2f(tiles, tiles); glVertex3f( ground_size, 0.0,  ground_size)
+        glTexCoord2f(tiles, 0.0); glVertex3f( ground_size, 0.0, -ground_size)
+        glEnd()
+        glDisable(GL_TEXTURE_2D)
+        
+        glPopMatrix()
+
+        # Отрисовка взлетной полосы
+        glPushMatrix()
+        glTranslatef(0.0, -0.29, 0.0)
+        
+        glEnable(GL_TEXTURE_2D)
+        if self.road_texture is not None:
+            glBindTexture(GL_TEXTURE_2D, self.road_texture)
+            glColor3f(1.0, 1.0, 1.0)
+        else:
+            glBindTexture(GL_TEXTURE_2D, 0)
+            glColor3f(0.2, 0.2, 0.2)
+
+        glBegin(GL_QUADS)
+        glNormal3f(0.0, 1.0, 0.0)
+        
+        road_width = 3.0
+        road_length = 30.0
+        tiles_x = road_length / 4.0
+        
+        glTexCoord2f(0.0, 0.0); glVertex3f(-road_length, 0.0, -road_width)
+        glTexCoord2f(0.0, 1.0); glVertex3f(-road_length, 0.0,  road_width)
+        glTexCoord2f(tiles_x, 1.0); glVertex3f( road_length, 0.0,  road_width)
+        glTexCoord2f(tiles_x, 0.0); glVertex3f( road_length, 0.0, -road_width)
+        glEnd()
+        glDisable(GL_TEXTURE_2D)
+        
+        glPopMatrix()
+
+        # Отрисовка небольшой площади (field) на конце полосы
+        glPushMatrix()
+        glTranslatef(0.0, -0.28, 0.0) # чуть выше взлетной полосы и пола
+        
+        glEnable(GL_TEXTURE_2D)
+        if self.field_texture is not None:
+            glBindTexture(GL_TEXTURE_2D, self.field_texture)
+            glColor3f(1.0, 1.0, 1.0)
+        else:
+            glBindTexture(GL_TEXTURE_2D, 0)
+            glColor3f(0.3, 0.3, 0.3)
+
+        glBegin(GL_QUADS)
+        glNormal3f(0.0, 1.0, 0.0)
+        
+        field_length = 15.0
+        field_width = 10.0
+        
+        # Площадка, сдвинутая чуть ближе к центру (например, последние 10 метров полосы)
+        start_x = road_length - field_length
+        end_x = road_length
+        
+        glTexCoord2f(0.0, 0.0); glVertex3f( start_x, 0.0, -field_width)
+        glTexCoord2f(0.0, 1.0); glVertex3f( start_x, 0.0,  field_width)
+        glTexCoord2f(1.0, 1.0); glVertex3f( end_x, 0.0,  field_width)
+        glTexCoord2f(1.0, 0.0); glVertex3f( end_x, 0.0, -field_width)
+        
+        glEnd()
+        glDisable(GL_TEXTURE_2D)
+        
+        glPopMatrix()
+
+        # Отрисовка зданий возле площадки
+        glDisable(GL_TEXTURE_2D)
+        self._draw_building(20.0, -0.3,  14.0, w=4.0, d=5.0, h=3.0, color=(1.0, 1.0, 1.0), texture=self.building1_texture)
+        self._draw_building(25.0, -0.3, -14.0, w=5.0, d=4.0, h=4.5, color=(1.0, 1.0, 1.0), texture=self.building2_texture)
+        # Здания напротив взлетной полосы (поперек)
+        self._draw_building(34.0, -0.3,   5.0, w=6.0, d=6.0, h=5.5, color=(1.0, 1.0, 1.0), texture=self.building1_texture)
+        self._draw_building(34.0, -0.3,  -5.0, w=4.5, d=5.5, h=3.5, color=(1.0, 1.0, 1.0), texture=self.building2_texture)
+
         # Настраиваем шейдер для проекции на модели
         glUseProgram(self.model_shader_program)
         
@@ -304,39 +560,63 @@ class SceneGLWidget(QOpenGLWidget):
         loc_use_proj = glGetUniformLocation(self.model_shader_program, "useProjector")
         loc_mat = glGetUniformLocation(self.model_shader_program, "projectorMatrix")
         
-        glUniform1i(loc_tex, 1) # Текстурный юнит 1
+        loc_base_tex = glGetUniformLocation(self.model_shader_program, "baseTexture")
+        loc_use_base = glGetUniformLocation(self.model_shader_program, "useBaseTexture")
         
+        glUniform1i(loc_tex, 1) # Текстурный юнит 1 (проектор)
+        glUniform1i(loc_base_tex, 0) # Текстурный юнит 0 (базовая)
+        
+        # Настройка текстуры проектора (выключена для самолета)
         glActiveTexture(GL_TEXTURE1)
         if self.projector_texture is not None:
             glBindTexture(GL_TEXTURE_2D, self.projector_texture)
-            glUniform1i(loc_use_proj, 1)
+            glUniform1i(loc_use_proj, 0) # Отключаем, чтобы текстура привязалась к модели
         else:
             glBindTexture(GL_TEXTURE_2D, 0)
             glUniform1i(loc_use_proj, 0)
+            
+        # Настройка закрепленной базовой текстуры
         glActiveTexture(GL_TEXTURE0)
-
-        # Шар
-        sphere_proj = self._get_projector_matrix(is_airplane=False)
-        glUniformMatrix4fv(loc_mat, 1, GL_FALSE, sphere_proj)
-        
-        glPushMatrix()
-        glTranslatef(self.sphere_pos[0], self.sphere_pos[1], self.sphere_pos[2])
-        glColor3f(0.1, 0.7, 0.4)
-        gluSphere(self.quadric, 1.0, 32, 32)
-        glPopMatrix()
+        if self.airplane_texture is not None:
+            glBindTexture(GL_TEXTURE_2D, self.airplane_texture)
+            glUniform1i(loc_use_base, 1)
+        else:
+            glBindTexture(GL_TEXTURE_2D, 0)
+            glUniform1i(loc_use_base, 0)
 
         # Самолёт
         if self.airplane_list is not None:
-            airplane_proj = self._get_projector_matrix(is_airplane=True)
+            airplane_proj = self._get_projector_matrix()
             glUniformMatrix4fv(loc_mat, 1, GL_FALSE, airplane_proj)
             
+            # Главный (управляемый) самолет
             glPushMatrix()
             glTranslatef(self.airplane_pos[0], self.airplane_pos[1], self.airplane_pos[2])
-            glColor3f(0.1, 0.8, 0.7)
+            glRotatef(self.airplane_rot[0], 0.0, 1.0, 0.0)
+            glRotatef(self.airplane_rot[1], 1.0, 0.0, 0.0)
+            glRotatef(self.airplane_rot[2], 0.0, 0.0, 1.0)
+            glColor3f(0.8, 0.8, 0.8) # Белый цвет, чтобы оригинальная текстура не окрашивалась
             glCallList(self.airplane_list)
             glPopMatrix()
 
+            # 5 неподвижных самолётов сбоку площадки, близко друг к другу
+            for i in range(5):
+                # Z сбоку площадки
+                z_pos = -7.5
+                # X выстраиваем в ряд вдоль края (от 18.0 до 28.0)
+                x_pos = 18.0 + i * 2.5
+                
+                glPushMatrix()
+                glTranslatef(x_pos, 0.0, z_pos)
+                glRotatef(-90.0, 0.0, 1.0, 0.0) # Носом к центру площадки
+                
+                glColor3f(0.8, 0.8, 0.8)
+                glCallList(self.airplane_list)
+                glPopMatrix()
+
         glUseProgram(0)
+
+        # Отрисовка облака точек убрана по требованию
 
         glBindFramebuffer(GL_FRAMEBUFFER, self.defaultFramebufferObject())
         glViewport(0, 0, w, h)
@@ -389,6 +669,8 @@ class SceneGLWidget(QOpenGLWidget):
             tgt = config['target']
             if isinstance(tgt, (list, tuple)) and len(tgt) == 3:
                 self.camera_target = [float(tgt[0]), float(tgt[1]), float(tgt[2])]
+
+        self._update_angles_from_camera()
                 
         print(f"[Camera] pos={self.camera_pos} fov={self.cam_fov}° near={self.cam_near} far={self.cam_far}")
         self.update()
@@ -420,6 +702,24 @@ class SceneGLWidget(QOpenGLWidget):
         if self.projector_texture is not None:
             glDeleteTextures(1, [self.projector_texture])
             self.projector_texture = None
+        if self.ground_texture is not None:
+            glDeleteTextures(1, [self.ground_texture])
+            self.ground_texture = None
+        if self.road_texture is not None:
+            glDeleteTextures(1, [self.road_texture])
+            self.road_texture = None
+        if self.field_texture is not None:
+            glDeleteTextures(1, [self.field_texture])
+            self.field_texture = None
+        if self.building1_texture is not None:
+            glDeleteTextures(1, [self.building1_texture])
+            self.building1_texture = None
+        if self.building2_texture is not None:
+            glDeleteTextures(1, [self.building2_texture])
+            self.building2_texture = None
+        if self.airplane_texture is not None:
+            glDeleteTextures(1, [self.airplane_texture])
+            self.airplane_texture = None
         if self.quad_vao is not None:
             glDeleteVertexArrays(1, [self.quad_vao])
             self.quad_vao = None
@@ -445,15 +745,204 @@ class SceneGLWidget(QOpenGLWidget):
             self._create_fbo(self.width() or 800, self.height() or 600)
             if self.projector_texture is None:
                 self.projector_texture = self._load_texture(self.texture_path)
+            if self.ground_texture is None:
+                self.ground_texture = self._load_texture(self.ground_texture_path, wrap=GL_REPEAT)
+            if self.road_texture is None:
+                self.road_texture = self._load_texture(self.road_texture_path, wrap=GL_REPEAT)
+            if self.field_texture is None:
+                self.field_texture = self._load_texture(self.field_texture_path, wrap=GL_REPEAT)
+            if self.building1_texture is None:
+                self.building1_texture = self._load_texture(self.building1_texture_path, wrap=GL_REPEAT)
+            if self.building2_texture is None:
+                self.building2_texture = self._load_texture(self.building2_texture_path, wrap=GL_REPEAT)
+            if self.airplane_texture is None:
+                self.airplane_texture = self._load_texture(self.airplane_texture_path, wrap=GL_REPEAT)
             self.doneCurrent()
             self.update()
 
     def mousePressEvent(self, event):
-        pass # Управление перенесено в UI панели настроек
+        self.last_mouse_pos = event.position()
 
     def mouseMoveEvent(self, event):
-        pass
+        if self.last_mouse_pos is None:
+            self.last_mouse_pos = event.position()
+            return
+
+        dx = event.position().x() - self.last_mouse_pos.x()
+        dy = event.position().y() - self.last_mouse_pos.y()
+        self.last_mouse_pos = event.position()
+
+        if event.buttons() & Qt.MouseButton.LeftButton:
+            # Вращение камеры
+            self.camera_yaw -= dx * 0.5
+            self.camera_pitch += dy * 0.5
+            # Ограничение pitch, чтобы избежать переворота камеры (gimbal lock)
+            self.camera_pitch = max(-89.0, min(89.0, self.camera_pitch))
+            self._update_camera_from_angles()
+            self.update()
+        elif event.buttons() & Qt.MouseButton.RightButton:
+            # Панорамирование (перемещение точки интереса)
+            rad_yaw = math.radians(self.camera_yaw)
+            right_x = math.cos(rad_yaw)
+            right_z = -math.sin(rad_yaw)
+            
+            pan_speed = self.camera_distance * 0.002
+            
+            self.camera_target[0] -= right_x * dx * pan_speed
+            self.camera_target[2] -= right_z * dx * pan_speed
+            self.camera_target[1] += dy * pan_speed
+            
+            self._update_camera_from_angles()
+            self.update()
 
     def wheelEvent(self, event):
-        pass
+        delta = event.angleDelta().y()
+        
+        rad_yaw = math.radians(self.camera_yaw)
+        rad_pitch = math.radians(self.camera_pitch)
+        
+        # Вектор направления взгляда (от камеры к цели)
+        dir_x = -math.cos(rad_pitch) * math.sin(rad_yaw)
+        dir_y = -math.sin(rad_pitch)
+        dir_z = -math.cos(rad_pitch) * math.cos(rad_yaw)
+        
+        # Скорость перемещения
+        move_speed = 1.5
+        
+        if delta > 0:
+            self.camera_target[0] += dir_x * move_speed
+            self.camera_target[1] += dir_y * move_speed
+            self.camera_target[2] += dir_z * move_speed
+        else:
+            self.camera_target[0] -= dir_x * move_speed
+            self.camera_target[1] -= dir_y * move_speed
+            self.camera_target[2] -= dir_z * move_speed
+            
+        self._update_camera_from_angles()
+        self.update()
+
+    def calculate_tof(self):
+        """Интеграция с ToF камерой Никиты. Запускает расчет и кэширует облако точек."""
+        if not self.airplane_loaded:
+            return
+            
+        try:
+            import sys
+            import os
+            tof_path = os.path.join(os.path.dirname(__file__), 'tof_camera')
+            if tof_path not in sys.path:
+                sys.path.insert(0, tof_path)
+                
+            from geometry import Point as ToFPoint, Triangle as ToFTriangle, Figure as ToFFigure
+            from tof_modeling import ToFCamera
+            
+            # Нормализация модели (как в stl_loader.build_display_list)
+            all_points = self.airplane_mesh.vectors.reshape(-1, 3)
+            min_coords = all_points.min(axis=0)
+            max_coords = all_points.max(axis=0)
+            center = (min_coords + max_coords) / 2.0
+            size = (max_coords - min_coords).max()
+            scale = 2.0 / size if size > 0 else 1.0
+
+            # Матрица вращения самолета
+            import math
+            cy = math.cos(math.radians(self.airplane_rot[0]))
+            sy = math.sin(math.radians(self.airplane_rot[0]))
+            cp = math.cos(math.radians(self.airplane_rot[1]))
+            sp = math.sin(math.radians(self.airplane_rot[1]))
+            cr = math.cos(math.radians(self.airplane_rot[2]))
+            sr = math.sin(math.radians(self.airplane_rot[2]))
+            
+            Ry = np.array([[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]])
+            Rx = np.array([[1, 0, 0], [0, cp, -sp], [0, sp, cp]])
+            Rz = np.array([[cr, -sr, 0], [sr, cr, 0], [0, 0, 1]])
+            rot_matrix = Ry @ Rx @ Rz
+
+            # Собираем фигуру с учетом смещения самолета, вращения и масштабирования
+            offset = np.array(self.airplane_pos)
+            triangles = []
+            for vec in self.airplane_mesh.vectors:
+                try:
+                    v1 = rot_matrix @ ((vec[0] - center) * scale) + offset
+                    v2 = rot_matrix @ ((vec[1] - center) * scale) + offset
+                    v3 = rot_matrix @ ((vec[2] - center) * scale) + offset
+                    p1 = ToFPoint(v1)
+                    p2 = ToFPoint(v2)
+                    p3 = ToFPoint(v3)
+                    triangles.append(ToFTriangle(p1, p2, p3))
+                except ValueError:
+                    pass
+            
+            if not triangles:
+                return
+            figure = ToFFigure(triangles, use_octree=True)
+            
+            direction = np.array(self.tof_dir)
+            if np.linalg.norm(direction) < 1e-5:
+                direction = np.array([0.0, 0.0, -1.0])
+                
+            # Инициализируем камеру (разрешение 100x100 для скорости)
+            cam = ToFCamera(
+                position=ToFPoint(np.array(self.tof_pos)),
+                width=100,
+                height=100,
+                direction=direction,
+                fov=self.cam_fov
+            )
+            
+            # Расчёт для самолёта
+            cam.get_points_and_distances_to_object(figure, parallel=False, use_octree=True)
+            self.tof_distances = cam.points_and_distances[0].copy()
+            self.tof_resolution = (100, 100)
+            
+            # Восстанавливаем 3D точки, так как UI считает их количество:
+            valid_mask = ~np.isnan(self.tof_distances)
+            rays = cam.generate_rays()
+            points = []
+            for i, ray in enumerate(rays):
+                if valid_mask[i]:
+                    points.append(ray.start.coords + ray.direction * self.tof_distances[i])
+            self.tof_points = np.array(points) if points else np.array([])
+            
+            self.update()
+        except ImportError as e:
+            print(f"Ошибка загрузки модулей ToF: {e}")
+        except Exception as e:
+            print(f"Ошибка расчёта ToF: {e}")
+
+    def save_depth_map(self, filename="depth_map.png"):
+        """
+        Сохраняет карту глубин с помощью Matplotlib
+        """
+        if not hasattr(self, 'tof_distances') or self.tof_distances is None:
+            return
+            
+        import matplotlib.pyplot as plt
+        import numpy as np
+        import matplotlib
+        matplotlib.use("Agg") # Указываем не открывать интерактивные окна
+        
+        width, height = self.tof_resolution
+        
+        depth_map = self.tof_distances.reshape((height, width))
+        
+        depth_map = np.rot90(depth_map, k=-1)
+        
+        figure, axis = plt.subplots(figsize=(8, 6))
+        
+        if np.all(np.isnan(depth_map)):
+            masked_depth = np.ma.masked_where(np.ones_like(depth_map, dtype=bool), depth_map)
+            map_img = axis.imshow(masked_depth, cmap='plasma_r')
+        else:
+            map_img = axis.imshow(depth_map, cmap='plasma_r', vmin=np.nanmin(depth_map), vmax=np.nanmax(depth_map))
+
+        axis.set_title('ToF camera depth map')
+        axis.axis("image")
+        axis.grid(False)
+        figure.colorbar(map_img, ax=axis, label='Distance to camera')
+
+        plt.savefig(filename)
+        plt.close(figure)
+        print(f"Карта глубин сохранена в {filename}")
+
 
