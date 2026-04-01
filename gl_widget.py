@@ -110,7 +110,7 @@ class SceneGLWidget(QOpenGLWidget):
 
         # Текстуры зданий
         self.building1_texture = None
-        self.building1_texture_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'textures', 'building.jpg')
+        self.building1_texture_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'textures', 'building1.jpg')
         self.building2_texture = None
         self.building2_texture_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'textures', 'building2.jpg')
 
