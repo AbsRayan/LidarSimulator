@@ -192,9 +192,9 @@ class ToFCamera:
         d = np.linalg.norm(self.direction)
         e1 = self.direction / d
 
-        a = np.array([1, 0, 0])
+        a = np.array([0, 1, 0])
         if (np.all((a - e1) == 0)):
-            a = np.array([0, 1, 0])
+            a = np.array([1, 0, 0])
 
         e2 = np.cross(e1, a)
         e2 /= np.linalg.norm(e2)
