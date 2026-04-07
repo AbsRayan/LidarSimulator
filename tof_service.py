@@ -6,8 +6,8 @@ from camera_controller import CameraController
 from geometry_utils import build_rotation_matrix, compute_mesh_normalization, transform_vertex
 
 class ToFService:
-    def calculate_tof(self, scene_state: SceneState, camera_controller: CameraController, airplane_mesh):
-        if not airplane_mesh:
+    def calculate_tof(self, scene_state: SceneState, camera_controller: CameraController):
+        if not getattr(scene_state, 'scene_config', None) or not scene_state.scene_config.objects:
             return
             
         try:
@@ -24,28 +24,64 @@ class ToFService:
                 sys.modules.pop('geometry', None)
                 if old_geometry is not None:
                     sys.modules['geometry'] = old_geometry
-            
-            all_points = airplane_mesh.vectors.reshape(-1, 3)
-            center, scale = compute_mesh_normalization(all_points)
-            
-            rot_matrix = build_rotation_matrix(scene_state.airplane_rot[0], scene_state.airplane_rot[1], scene_state.airplane_rot[2])
-            offset = np.array(scene_state.airplane_pos)
-            
-            triangles = []
-            for vec in airplane_mesh.vectors:
-                try:
-                    v1 = transform_vertex(vec[0], rot_matrix, offset, center, scale)
-                    v2 = transform_vertex(vec[1], rot_matrix, offset, center, scale)
-                    v3 = transform_vertex(vec[2], rot_matrix, offset, center, scale)
                     
-                    p1 = ToFPoint(v1)
-                    p2 = ToFPoint(v2)
-                    p3 = ToFPoint(v3)
-                    triangles.append(ToFTriangle(p1, p2, p3))
-                except ValueError:
-                    pass
+            import stl_loader
+            parsed_stls = {}
+            triangles = []
+            
+            for obj in scene_state.scene_config.objects:
+                pos_arr = np.array(scene_state.airplane_pos if obj.dynamic_pos == 'airplane_pos' else obj.position, dtype=np.float64)
+                rot_arr = scene_state.airplane_rot if obj.dynamic_rot == 'airplane_rot' else obj.rotation
+                rot_mat = build_rotation_matrix(rot_arr[0], rot_arr[1], rot_arr[2])
+                scale_arr = np.array(obj.scale)
+                
+                if obj.type == 'mesh':
+                    if obj.model_path not in parsed_stls:
+                        # try to load using stl_loader
+                        full_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), obj.model_path)
+                        parsed_stls[obj.model_path] = stl_loader.load_stl(full_path)
+                        
+                    mesh_data = parsed_stls[obj.model_path]
+                    if mesh_data is not None:
+                        all_points = mesh_data.vectors.reshape(-1, 3)
+                        center, norm_scale = compute_mesh_normalization(all_points)
+                        
+                        def scaled_transform(v):
+                            v_norm = (v - center) * norm_scale
+                            v_scaled = v_norm * scale_arr
+                            return rot_mat @ v_scaled + pos_arr
+                            
+                        for vec in mesh_data.vectors:
+                            try:
+                                v1 = scaled_transform(vec[0])
+                                v2 = scaled_transform(vec[1])
+                                v3 = scaled_transform(vec[2])
+                                
+                                p1 = ToFPoint(v1)
+                                p2 = ToFPoint(v2)
+                                p3 = ToFPoint(v3)
+                                triangles.append(ToFTriangle(p1, p2, p3))
+                            except ValueError:
+                                pass
+                                
+                elif obj.type in ['plane', 'box']:
+                    tris = obj.get_triangles()
+                    for (v0, v1, v2), normal in tris:
+                        if obj.dynamic_pos or obj.dynamic_rot:
+                            v0 = rot_mat @ v0 + pos_arr
+                            v1 = rot_mat @ v1 + pos_arr
+                            v2 = rot_mat @ v2 + pos_arr
+                        
+                        try:
+                            p1 = ToFPoint(v0)
+                            p2 = ToFPoint(v1)
+                            p3 = ToFPoint(v2)
+                            triangles.append(ToFTriangle(p1, p2, p3))
+                        except ValueError:
+                            pass
             
             if not triangles:
+                print("Нет треугольников для ToF")
                 return
                 
             figure = ToFFigure(triangles=triangles, use_octree=True)
@@ -82,7 +118,7 @@ class ToFService:
         import matplotlib.pyplot as plt
 
         width, height = scene_state.tof_resolution
-        depth_map = scene_state.tof_distances.reshape((width, height))
+        depth_map = scene_state.tof_distances.reshape((height, width))
 
         figure, axis = plt.subplots(figsize=(8, 6))
 
