@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap
 from gl_widget import SceneGLWidget
-from controller import SimulationController, SimulationDefaults
+from simulation_controller import SimulationController, SimulationDefaults
 
 class MainWindow(QMainWindow):
     def __init__(self):
