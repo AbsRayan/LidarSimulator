@@ -25,12 +25,6 @@ class SceneGLWidget(QOpenGLWidget):
         self.last_mouse_pos = None
 
         self.projector_texture_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'textures', 'base_texture.png')
-        self.ground_texture_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'textures', 'ground.jpg')
-        self.road_texture_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'textures', 'road.png')
-        self.field_texture_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'textures', 'field.jpg')
-        self.building1_texture_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'textures', 'building1.jpg')
-        self.building2_texture_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'textures', 'building2.jpg')
-        self.airplane_texture_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'textures', 'MiG29.png')
 
     # Делегирование свойств SceneState, чтобы не ломать внешний API (MainWindow)
     @property
@@ -67,18 +61,13 @@ class SceneGLWidget(QOpenGLWidget):
         
         if not self.gl_resources.get_texture('projector'):
             self.gl_resources.load_texture('projector', self.projector_texture_path)
-        if not self.gl_resources.get_texture('ground'):
-            self.gl_resources.load_texture('ground', self.ground_texture_path, wrap=gl.GL_REPEAT)
-        if not self.gl_resources.get_texture('road'):
-            self.gl_resources.load_texture('road', self.road_texture_path, wrap=gl.GL_REPEAT)
-        if not self.gl_resources.get_texture('field'):
-            self.gl_resources.load_texture('field', self.field_texture_path, wrap=gl.GL_REPEAT)
-        if not self.gl_resources.get_texture('building1'):
-            self.gl_resources.load_texture('building1', self.building1_texture_path, wrap=gl.GL_REPEAT)
-        if not self.gl_resources.get_texture('building2'):
-            self.gl_resources.load_texture('building2', self.building2_texture_path, wrap=gl.GL_REPEAT)
-        if not self.gl_resources.get_texture('airplane'):
-            self.gl_resources.load_texture('airplane', self.airplane_texture_path, wrap=gl.GL_REPEAT)
+            
+        if getattr(self.scene_state, 'scene_config', None):
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            for tex_id, tex_path in self.scene_state.scene_config.textures.items():
+                if not self.gl_resources.get_texture(tex_id):
+                    full_path = os.path.join(base_dir, tex_path)
+                    self.gl_resources.load_texture(tex_id, full_path, wrap=gl.GL_REPEAT)
 
     def resizeGL(self, w, h):
         if self.gl_resources.fbo is not None:

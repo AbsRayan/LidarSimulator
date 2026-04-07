@@ -93,6 +93,7 @@ class SceneObject:
 @dataclass
 class SceneConfig:
     objects: List[SceneObject]
+    textures: dict = field(default_factory=dict)
 
 def load_scene(config_path: str) -> SceneConfig:
     if not os.path.exists(config_path):
@@ -119,4 +120,6 @@ def load_scene(config_path: str) -> SceneConfig:
         )
         objs.append(obj)
         
-    return SceneConfig(objects=objs)
+    textures = data.get("textures", {})
+        
+    return SceneConfig(objects=objs, textures=textures)

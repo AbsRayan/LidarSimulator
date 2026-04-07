@@ -1,4 +1,12 @@
 {
+  "textures": {
+    "ground": "textures/ground.jpg",
+    "road": "textures/road.png",
+    "field": "textures/field.jpg",
+    "building1": "textures/building1.jpg",
+    "building2": "textures/building2.jpg",
+    "airplane": "textures/MiG29.png"
+  },
   "objects": [
     {
       "id": "ground",
