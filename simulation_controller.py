@@ -4,6 +4,7 @@ from PyQt6.QtWidgets import QFileDialog, QMessageBox, QApplication
 from config_loader import ConfigLoader
 from tof_service import ToFService
 from raytrace_service import RaytraceService
+from scene_loader import load_scene
 
 class SimulationDefaults:
     AIRPLANE_POS = [22.0, 0.0, 0.0]
@@ -92,8 +93,7 @@ class SimulationController:
 
         self.tof_service.calculate_tof(
             self.gl_scene.scene_state, 
-            self.gl_scene.camera_controller, 
-            self.gl_scene.airplane_mesh
+            self.gl_scene.camera_controller
         )
         self.gl_scene.update()
 
@@ -145,6 +145,7 @@ class SimulationController:
         base_dir = os.path.dirname(os.path.abspath(__file__))
         yaml_path = os.path.join(base_dir, 'configs', 'sensor.yaml')
         toml_path = os.path.join(base_dir, 'configs', 'sensor.toml')
+        scene_path = os.path.join(base_dir, 'configs', 'scene.json')
         
         try:
             lidar_config = ConfigLoader.load(yaml_path)
@@ -157,3 +158,12 @@ class SimulationController:
             print(f"Loaded TOML config (Camera): {camera_config}")
         except Exception as e:
             print(f"Error loading TOML config: {e}")
+            
+        try:
+            self.gl_scene.scene_state.scene_config = load_scene(scene_path)
+            print(f"Loaded JSON config (Scene) with {len(self.gl_scene.scene_state.scene_config.objects)} objects.")
+            self.gl_scene.update()
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"Error loading JSON scene config: {e}")
