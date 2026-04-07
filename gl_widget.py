@@ -24,9 +24,6 @@ class SceneGLWidget(QOpenGLWidget):
 
         self.last_mouse_pos = None
 
-        self.airplane_mesh = stl_loader.load_stl('models/Mig29.stl')
-        self.airplane_loaded = self.airplane_mesh is not None
-
         self.projector_texture_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'textures', 'base_texture.png')
         self.ground_texture_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'textures', 'ground.jpg')
         self.road_texture_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'textures', 'road.png')
@@ -65,9 +62,6 @@ class SceneGLWidget(QOpenGLWidget):
 
     def initializeGL(self):
         self.gl_resources.initialize()
-        
-        if self.airplane_loaded:
-            self.gl_resources.build_mesh_display_list('airplane', self.airplane_mesh)
             
         self.gl_resources.create_fbo(self.width() or 800, self.height() or 600, self.devicePixelRatioF())
         
@@ -247,161 +241,106 @@ class SceneGLWidget(QOpenGLWidget):
 
         gl.glLightfv(gl.GL_LIGHT0, gl.GL_POSITION, (5, 5, -5, 1))
 
-        # Пол
-        gl.glPushMatrix()
-        gl.glTranslatef(0.0, -0.3, 0.0)
-        
-        gl.glEnable(gl.GL_TEXTURE_2D)
-        ground_tex = self.gl_resources.get_texture('ground')
-        if ground_tex is not None:
-            gl.glBindTexture(gl.GL_TEXTURE_2D, ground_tex)
-            gl.glColor3f(1.0, 1.0, 1.0)
-        else:
-            gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
-            gl.glColor3f(0.35, 0.35, 0.35)
-
-        gl.glBegin(gl.GL_QUADS)
-        gl.glNormal3f(0.0, 1.0, 0.0)
-        
-        ground_size = 100.0
-        tiles = ground_size / 3.0
-        
-        gl.glTexCoord2f(0.0, 0.0); gl.glVertex3f(-ground_size, 0.0, -ground_size)
-        gl.glTexCoord2f(0.0, tiles); gl.glVertex3f(-ground_size, 0.0,  ground_size)
-        gl.glTexCoord2f(tiles, tiles); gl.glVertex3f( ground_size, 0.0,  ground_size)
-        gl.glTexCoord2f(tiles, 0.0); gl.glVertex3f( ground_size, 0.0, -ground_size)
-        gl.glEnd()
-        gl.glDisable(gl.GL_TEXTURE_2D)
-        gl.glPopMatrix()
-
-        # Взлетная полоса
-        gl.glPushMatrix()
-        gl.glTranslatef(0.0, -0.29, 0.0)
-        
-        gl.glEnable(gl.GL_TEXTURE_2D)
-        road_tex = self.gl_resources.get_texture('road')
-        if road_tex is not None:
-            gl.glBindTexture(gl.GL_TEXTURE_2D, road_tex)
-            gl.glColor3f(1.0, 1.0, 1.0)
-        else:
-            gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
-            gl.glColor3f(0.2, 0.2, 0.2)
-
-        gl.glBegin(gl.GL_QUADS)
-        gl.glNormal3f(0.0, 1.0, 0.0)
-        
-        road_width = 3.0
-        road_length = 30.0
-        tiles_x = road_length / 4.0
-        
-        gl.glTexCoord2f(0.0, 0.0); gl.glVertex3f(-road_length, 0.0, -road_width)
-        gl.glTexCoord2f(0.0, 1.0); gl.glVertex3f(-road_length, 0.0,  road_width)
-        gl.glTexCoord2f(tiles_x, 1.0); gl.glVertex3f( road_length, 0.0,  road_width)
-        gl.glTexCoord2f(tiles_x, 0.0); gl.glVertex3f( road_length, 0.0, -road_width)
-        gl.glEnd()
-        gl.glDisable(gl.GL_TEXTURE_2D)
-        gl.glPopMatrix()
-
-        # Поле
-        gl.glPushMatrix()
-        gl.glTranslatef(0.0, -0.28, 0.0)
-        
-        gl.glEnable(gl.GL_TEXTURE_2D)
-        field_tex = self.gl_resources.get_texture('field')
-        if field_tex is not None:
-            gl.glBindTexture(gl.GL_TEXTURE_2D, field_tex)
-            gl.glColor3f(1.0, 1.0, 1.0)
-        else:
-            gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
-            gl.glColor3f(0.3, 0.3, 0.3)
-
-        gl.glBegin(gl.GL_QUADS)
-        gl.glNormal3f(0.0, 1.0, 0.0)
-        
-        field_length = 15.0
-        field_width = 10.0
-        
-        start_x = road_length - field_length
-        end_x = road_length
-        
-        gl.glTexCoord2f(0.0, 0.0); gl.glVertex3f( start_x, 0.0, -field_width)
-        gl.glTexCoord2f(0.0, 1.0); gl.glVertex3f( start_x, 0.0,  field_width)
-        gl.glTexCoord2f(1.0, 1.0); gl.glVertex3f( end_x, 0.0,  field_width)
-        gl.glTexCoord2f(1.0, 0.0); gl.glVertex3f( end_x, 0.0, -field_width)
-        
-        gl.glEnd()
-        gl.glDisable(gl.GL_TEXTURE_2D)
-        gl.glPopMatrix()
-
-        # Здания
-        gl.glDisable(gl.GL_TEXTURE_2D)
-        b1_tex = self.gl_resources.get_texture('building1')
-        b2_tex = self.gl_resources.get_texture('building2')
-        self._draw_building(20.0, -0.3,  14.0, w=4.0, d=5.0, h=3.0, color=(1.0, 1.0, 1.0), texture=b1_tex)
-        self._draw_building(25.0, -0.3, -14.0, w=5.0, d=4.0, h=4.5, color=(1.0, 1.0, 1.0), texture=b2_tex)
-        self._draw_building(34.0, -0.3,   5.0, w=6.0, d=6.0, h=5.5, color=(1.0, 1.0, 1.0), texture=b1_tex)
-        self._draw_building(34.0, -0.3,  -5.0, w=4.5, d=5.5, h=3.5, color=(1.0, 1.0, 1.0), texture=b2_tex)
-
-        # Самолёты
-        gl.glUseProgram(self.gl_resources.model_shader_program)
-        
-        loc_tex = gl.glGetUniformLocation(self.gl_resources.model_shader_program, "projectorTexture")
-        loc_use_proj = gl.glGetUniformLocation(self.gl_resources.model_shader_program, "useProjector")
-        loc_mat = gl.glGetUniformLocation(self.gl_resources.model_shader_program, "projectorMatrix")
-        
-        loc_base_tex = gl.glGetUniformLocation(self.gl_resources.model_shader_program, "baseTexture")
-        loc_use_base = gl.glGetUniformLocation(self.gl_resources.model_shader_program, "useBaseTexture")
-        
-        gl.glUniform1i(loc_tex, 1) 
-        gl.glUniform1i(loc_base_tex, 0)
-        
-        gl.glActiveTexture(gl.GL_TEXTURE1)
-        proj_tex = self.gl_resources.get_texture('projector')
-        if proj_tex is not None:
-            gl.glBindTexture(gl.GL_TEXTURE_2D, proj_tex)
-            gl.glUniform1i(loc_use_proj, 0)
-        else:
-            gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
-            gl.glUniform1i(loc_use_proj, 0)
-            
-        gl.glActiveTexture(gl.GL_TEXTURE0)
-        air_tex = self.gl_resources.get_texture('airplane')
-        if air_tex is not None:
-            gl.glBindTexture(gl.GL_TEXTURE_2D, air_tex)
-            gl.glUniform1i(loc_use_base, 1)
-        else:
-            gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
-            gl.glUniform1i(loc_use_base, 0)
-
-        airplane_dl = self.gl_resources.get_display_list('airplane')
-        if airplane_dl is not None:
-            airplane_proj = self._get_projector_matrix()
-            gl.glUniformMatrix4fv(loc_mat, 1, gl.GL_FALSE, airplane_proj)
-            
-            # Главный 
-            gl.glPushMatrix()
-            gl.glTranslatef(self.scene_state.airplane_pos[0], self.scene_state.airplane_pos[1], self.scene_state.airplane_pos[2])
-            gl.glRotatef(self.scene_state.airplane_rot[0], 0.0, 1.0, 0.0)
-            gl.glRotatef(self.scene_state.airplane_rot[1], 1.0, 0.0, 0.0)
-            gl.glRotatef(self.scene_state.airplane_rot[2], 0.0, 0.0, 1.0)
-            gl.glColor3f(0.8, 0.8, 0.8)
-            gl.glCallList(airplane_dl)
-            gl.glPopMatrix()
-
-            # Припаркованные
-            for i in range(5):
-                z_pos = -7.5
-                x_pos = 18.0 + i * 2.5
+        # Render SceneConfig objects
+        if getattr(self.scene_state, 'scene_config', None):
+            for obj in self.scene_state.scene_config.objects:
+                pos = self.scene_state.airplane_pos if obj.dynamic_pos == 'airplane_pos' else obj.position
+                rot = self.scene_state.airplane_rot if obj.dynamic_rot == 'airplane_rot' else obj.rotation
                 
                 gl.glPushMatrix()
-                gl.glTranslatef(x_pos, 0.0, z_pos)
-                gl.glRotatef(-90.0, 0.0, 1.0, 0.0) 
+                gl.glTranslatef(pos[0], pos[1], pos[2])
+                gl.glRotatef(rot[0], 0.0, 1.0, 0.0)
+                gl.glRotatef(rot[1], 1.0, 0.0, 0.0)
+                gl.glRotatef(rot[2], 0.0, 0.0, 1.0)
+                gl.glScalef(obj.scale[0], obj.scale[1], obj.scale[2])
                 
-                gl.glColor3f(0.8, 0.8, 0.8)
-                gl.glCallList(airplane_dl)
-                gl.glPopMatrix()
+                if obj.type == 'mesh':
+                    gl.glUseProgram(self.gl_resources.model_shader_program)
+                    
+                    loc_tex = gl.glGetUniformLocation(self.gl_resources.model_shader_program, "projectorTexture")
+                    loc_use_proj = gl.glGetUniformLocation(self.gl_resources.model_shader_program, "useProjector")
+                    loc_mat = gl.glGetUniformLocation(self.gl_resources.model_shader_program, "projectorMatrix")
+                    
+                    loc_base_tex = gl.glGetUniformLocation(self.gl_resources.model_shader_program, "baseTexture")
+                    loc_use_base = gl.glGetUniformLocation(self.gl_resources.model_shader_program, "useBaseTexture")
+                    
+                    gl.glUniform1i(loc_tex, 1) 
+                    gl.glUniform1i(loc_base_tex, 0)
+                    
+                    gl.glActiveTexture(gl.GL_TEXTURE1)
+                    proj_tex = self.gl_resources.get_texture('projector')
+                    if proj_tex is not None and obj.dynamic_pos == 'airplane_pos':
+                        gl.glBindTexture(gl.GL_TEXTURE_2D, proj_tex)
+                        gl.glUniform1i(loc_use_proj, 0)
+                    else:
+                        gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
+                        gl.glUniform1i(loc_use_proj, 0)
+                        
+                    gl.glActiveTexture(gl.GL_TEXTURE0)
+                    air_tex = self.gl_resources.get_texture(obj.texture) if obj.texture else None
+                    if air_tex is not None:
+                        gl.glBindTexture(gl.GL_TEXTURE_2D, air_tex)
+                        gl.glUniform1i(loc_use_base, 1)
+                    else:
+                        gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
+                        gl.glUniform1i(loc_use_base, 0)
 
-        gl.glUseProgram(0)
+                    # Lazy load model
+                    mesh_id = obj.model_path
+                    if not self.gl_resources.get_display_list(mesh_id):
+                        mesh = stl_loader.load_stl(mesh_id)
+                        if mesh:
+                            self.gl_resources.build_mesh_display_list(mesh_id, mesh)
+                            
+                    dl = self.gl_resources.get_display_list(mesh_id)
+                    if dl is not None:
+                        airplane_proj = self._get_projector_matrix()
+                        gl.glUniformMatrix4fv(loc_mat, 1, gl.GL_FALSE, airplane_proj)
+                        
+                        gl.glColor3f(*obj.color)
+                        gl.glCallList(dl)
+                        
+                    gl.glUseProgram(0)
+                
+                elif obj.type == 'box':
+                    tex = self.gl_resources.get_texture(obj.texture) if obj.texture else None
+                    box_w, box_h, box_d = obj.dimensions
+                    # The box is drawn centered internally using obj.position? Usually box is at 0,0,0 and scaled.
+                    # _draw_building logic expects absolute coords but we are translated already.
+                    # So we pass 0,0,0
+                    self._draw_building(0.0, 0.0, 0.0, w=box_w, d=box_d, h=box_h, color=tuple(obj.color), texture=tex)
+                    
+                elif obj.type == 'plane':
+                    gl.glEnable(gl.GL_TEXTURE_2D)
+                    tex = self.gl_resources.get_texture(obj.texture) if obj.texture else None
+                    if tex is not None:
+                        gl.glBindTexture(gl.GL_TEXTURE_2D, tex)
+                        gl.glColor3f(*(obj.color if len(obj.color) == 3 else [1.0, 1.0, 1.0]))
+                    else:
+                        gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
+                        gl.glColor3f(*obj.color)
+                        
+                    gl.glBegin(gl.GL_QUADS)
+                    gl.glNormal3f(0.0, 1.0, 0.0)
+                    
+                    # Size is scaled relative to 1x1 plane centered at 0,0,0
+                    # For planes, we just draw unit quad and scale handles size.
+                    # Wait, our scene object scale is already half-width?
+                    # Let's verify scene_loader: "sx, sy, sz = self.scale; v0 = np.array([px - sx, py, pz - sz])"
+                    # So unit quad is from -1 to 1 based on X and Z.
+                    
+                    # Some texture scaling logic if needed:
+                    tiles_x = obj.scale[0] / 3.0 if obj.texture == 'ground' else (obj.scale[0] / 4.0 if obj.texture == 'road' else 1.0)
+                    tiles_y = obj.scale[2] / 3.0 if obj.texture == 'ground' else (obj.scale[2] / 4.0 if obj.texture == 'field' else 1.0)
+                    
+                    gl.glTexCoord2f(0.0, 0.0); gl.glVertex3f(-1.0, 0.0, -1.0)
+                    gl.glTexCoord2f(0.0, tiles_y); gl.glVertex3f(-1.0, 0.0,  1.0)
+                    gl.glTexCoord2f(tiles_x, tiles_y); gl.glVertex3f( 1.0, 0.0,  1.0)
+                    gl.glTexCoord2f(tiles_x, 0.0); gl.glVertex3f( 1.0, 0.0, -1.0)
+                    gl.glEnd()
+                    gl.glDisable(gl.GL_TEXTURE_2D)
+
+                gl.glPopMatrix()
 
         # Маркер ToF камеры
         gl.glDisable(gl.GL_TEXTURE_2D)
