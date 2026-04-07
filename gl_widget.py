@@ -63,13 +63,13 @@ class SceneGLWidget(QOpenGLWidget):
         self.cam_near = 0.1
         self.cam_far = 100.0
 
-        # Позиция объектов в сцене (X, Y, Z)
-        self.airplane_pos = [22.0, 0.0, 0.0]
-        self.airplane_rot = [-90.0, 0.0, 0.0]  # Вращение (Yaw, Pitch, Roll)
+        # Позиция объектов в сцене (устанавливается из SimulationController)
+        self.airplane_pos = [0.0, 0.0, 0.0]
+        self.airplane_rot = [0.0, 0.0, 0.0]  # Вращение (Yaw, Pitch, Roll)
         
-        # Позиция и направление ToF-камеры (X, Y, Z)
-        self.tof_pos = [0.0, 5.0, 10.0]
-        self.tof_dir = [0.0, -5.0, -10.0]
+        # Позиция и направление ToF-камеры (устанавливается из SimulationController)
+        self.tof_pos = [0.0, 0.0, 0.0]
+        self.tof_dir = [0.0, 0.0, 0.0]
 
         # OpenGL ресурсы (создаются в initializeGL)
         self.quadric = None
@@ -616,6 +616,31 @@ class SceneGLWidget(QOpenGLWidget):
 
         glUseProgram(0)
 
+        # --- Маркер ToF камеры ---
+        glDisable(GL_TEXTURE_2D)
+        glEnable(GL_LIGHTING)
+
+        # Красная сфера в позиции ToF камеры
+        glPushMatrix()
+        glTranslatef(self.tof_pos[0], self.tof_pos[1], self.tof_pos[2])
+        glMaterialfv(GL_FRONT_AND_BACK, GL_EMISSION, [0.8, 0.0, 0.0, 1.0])  # Само-светящаяся
+        glColor3f(1.0, 0.0, 0.0)
+        gluSphere(self.quadric, 0.2, 16, 16)
+        glMaterialfv(GL_FRONT_AND_BACK, GL_EMISSION, [0.0, 0.0, 0.0, 1.0])  # Сброс emission
+        glPopMatrix()
+
+        # Линия от позиции камеры к цели (направлению)
+        glDisable(GL_LIGHTING)
+        glLineWidth(2.0)
+        glColor3f(1.0, 0.4, 0.0)
+        glBegin(GL_LINES)
+        glVertex3f(self.tof_pos[0], self.tof_pos[1], self.tof_pos[2])
+        target = [self.tof_pos[i] + self.tof_dir[i] for i in range(3)]
+        glVertex3f(target[0], target[1], target[2])
+        glEnd()
+        glLineWidth(1.0)
+        glEnable(GL_LIGHTING)
+
         # Отрисовка облака точек убрана по требованию
 
         glBindFramebuffer(GL_FRAMEBUFFER, self.defaultFramebufferObject())
@@ -875,7 +900,7 @@ class SceneGLWidget(QOpenGLWidget):
             
             if not triangles:
                 return
-            figure = ToFFigure(triangles, use_octree=True)
+            figure = ToFFigure(triangles=triangles, use_octree=True)
             
             direction = np.array(self.tof_dir)
             if np.linalg.norm(direction) < 1e-5:
@@ -892,17 +917,11 @@ class SceneGLWidget(QOpenGLWidget):
             
             # Расчёт для самолёта
             cam.get_points_and_distances_to_object(figure, parallel=False, use_octree=True)
-            self.tof_distances = cam.points_and_distances[0].copy()
+            self.tof_distances = cam.object_distances.copy()
             self.tof_resolution = (100, 100)
             
-            # Восстанавливаем 3D точки, так как UI считает их количество:
-            valid_mask = ~np.isnan(self.tof_distances)
-            rays = cam.generate_rays()
-            points = []
-            for i, ray in enumerate(rays):
-                if valid_mask[i]:
-                    points.append(ray.start.coords + ray.direction * self.tof_distances[i])
-            self.tof_points = np.array(points) if points else np.array([])
+            # Берём уже готовые точки прямо из камеры
+            self.tof_points = cam.object_points if cam.object_points is not None else np.array([])
             
             self.update()
         except ImportError as e:
@@ -910,36 +929,168 @@ class SceneGLWidget(QOpenGLWidget):
         except Exception as e:
             print(f"Ошибка расчёта ToF: {e}")
 
+    def calculate_raytrace(self, output_path: str, width: int = 400, height: int = 300) -> bool:
+        """
+        Запускает рейтрейсинговый рендер сцены с текущей позицией камеры.
+        """
+        try:
+            import numpy as np
+            import math
+            from stl_parser import parse_binary_stl
+            from core.camera import Camera as RayCamera
+            from core.light import Light
+            from core.plane import Plane
+            from core.material import Material
+            from renderer.mesh_renderer import MeshRenderer
+            from geometry.mesh import Mesh, Triangle as RayTriangle
+            from PIL import Image
+
+            stl_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models', 'Mig29.stl')
+            airplane_color = np.array([185, 185, 185], dtype=np.float64)
+
+            print("[Raytracer] Загрузка STL...")
+            raw_mesh = parse_binary_stl(stl_path, airplane_color)
+
+            # --- Нормализация (те же параметры, что в stl_loader) ---
+            all_verts = np.array([[t.v0, t.v1, t.v2] for t in raw_mesh.triangles]).reshape(-1, 3)
+            min_coords = all_verts.min(axis=0)
+            max_coords = all_verts.max(axis=0)
+            center = (min_coords + max_coords) / 2.0
+            size = (max_coords - min_coords).max()
+            scale = 2.0 / size if size > 0 else 1.0
+
+            airplane_mat = Material(
+                color=airplane_color,
+                diffuse=0.9,
+                specular=0.3,
+                shininess=50.0,
+                reflection=0.1
+            )
+
+            def _make_rot(yaw, pitch, roll):
+                cy, sy = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
+                cp, sp = math.cos(math.radians(pitch)), math.sin(math.radians(pitch))
+                cr, sr = math.cos(math.radians(roll)), math.sin(math.radians(roll))
+                Ry = np.array([[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]])
+                Rx = np.array([[1, 0, 0], [0, cp, -sp], [0, sp, cp]])
+                Rz = np.array([[cr, -sr, 0], [sr, cr, 0], [0, 0, 1]])
+                return Ry @ Rx @ Rz
+
+            def _add_airplane(tris, rot_m, offs):
+                for tri in raw_mesh.triangles:
+                    v0 = rot_m @ ((tri.v0 - center) * scale) + offs
+                    v1 = rot_m @ ((tri.v1 - center) * scale) + offs
+                    v2 = rot_m @ ((tri.v2 - center) * scale) + offs
+                    n = rot_m @ tri.normal
+                    nl = np.linalg.norm(n)
+                    if nl < 1e-6:
+                        continue
+                    tris.append(RayTriangle(v0, v1, v2, n / nl, airplane_color, airplane_mat))
+
+            all_triangles = []
+
+            # --- Главный самолёт ---
+            print("[Raytracer] Добавление главного самолёта...")
+            rot_main = _make_rot(self.airplane_rot[0], self.airplane_rot[1], self.airplane_rot[2])
+            _add_airplane(all_triangles, rot_main, np.array(self.airplane_pos, dtype=np.float64))
+
+            # --- 5 припаркованных самолётов (как в paintGL) ---
+            print("[Raytracer] Добавление 5 припаркованных самолётов...")
+            rot_parked = _make_rot(-90.0, 0.0, 0.0)
+            for i in range(5):
+                _add_airplane(all_triangles, rot_parked, np.array([18.0 + i * 2.5, 0.0, -7.5]))
+
+            # --- Пол как два треугольника ---
+            ground_color = np.array([70, 100, 60], dtype=np.float64)
+            ground_mat = Material(color=ground_color, diffuse=0.85)
+            gn = np.array([0.0, 1.0, 0.0])
+            gs, gy = 100.0, -0.3
+            all_triangles.append(RayTriangle(np.array([-gs,gy,-gs]), np.array([gs,gy,-gs]), np.array([gs,gy,gs]),  gn, ground_color, ground_mat))
+            all_triangles.append(RayTriangle(np.array([-gs,gy,-gs]), np.array([gs,gy, gs]), np.array([-gs,gy,gs]), gn, ground_color, ground_mat))
+
+            if not all_triangles:
+                print("[Raytracer] Нет треугольников.")
+                return False
+
+            print(f"[Raytracer] Строим BVH для {len(all_triangles)} треугольников...")
+            scene_mesh = Mesh(all_triangles)
+
+            # --- Камера из текущего состояния OpenGL-вида ---
+            cam_pos = np.array(self.camera_pos, dtype=np.float64)
+            cam_target = np.array(self.camera_target, dtype=np.float64)
+
+            camera = RayCamera(
+                position=cam_pos,
+                look_at=cam_target,
+                vector_up=np.array([0.0, 1.0, 0.0]),
+                fov_vertical=self.cam_fov,
+                fov_horizontal=self.cam_fov * (width / height)
+            )
+
+            # --- Источник света (над сценой) ---
+            light = Light(
+                position=np.array([10.0, 20.0, 10.0]),
+                color=np.array([255, 255, 220], dtype=np.uint8),
+                intensity=2.0
+            )
+
+            # --- Пол ---
+            ground_material = Material(color=np.array([80, 100, 80], dtype=np.float64), diffuse=0.8)
+            plane = Plane(
+                point=np.array([0.0, -0.3, 0.0]),
+                normal=np.array([0.0, 1.0, 0.0]),
+                color=np.array([80, 100, 80], dtype=np.float64)
+            )
+
+            renderer = MeshRenderer(
+                mesh=scene_mesh,
+                camera=camera,
+                plane=plane,
+                light=light
+            )
+
+            print(f"[Raytracer] Рендеринг {width}x{height}...")
+            image_array = renderer.render(width, height)
+
+            img = Image.fromarray(image_array.astype(np.uint8))
+            img.save(output_path)
+            print(f"[Raytracer] Сохранено в {output_path}")
+            return True
+
+        except Exception as e:
+            import traceback
+            print(f"[Raytracer] Ошибка: {e}")
+            traceback.print_exc()
+            return False
+
     def save_depth_map(self, filename="depth_map.png"):
         """
-        Сохраняет карту глубин с помощью Matplotlib
+        Сохраняет карту глубин — точная копия visualize_depth_map из tof_modeling.py,
+        plt.show() заменён на plt.savefig().
         """
         if not hasattr(self, 'tof_distances') or self.tof_distances is None:
             return
-            
-        import matplotlib.pyplot as plt
-        import numpy as np
+
         import matplotlib
-        matplotlib.use("Agg") # Указываем не открывать интерактивные окна
-        
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
         width, height = self.tof_resolution
-        
-        depth_map = self.tof_distances.reshape((height, width))
-        
-        depth_map = np.rot90(depth_map, k=-1)
-        
+
+        depth_map = self.tof_distances
+        depth_map = depth_map.reshape((width, height))
+
         figure, axis = plt.subplots(figsize=(8, 6))
-        
+
         if np.all(np.isnan(depth_map)):
             masked_depth = np.ma.masked_where(np.ones_like(depth_map, dtype=bool), depth_map)
-            map_img = axis.imshow(masked_depth, cmap='plasma_r')
+            axis.imshow(masked_depth, cmap='plasma_r')
         else:
-            map_img = axis.imshow(depth_map, cmap='plasma_r', vmin=np.nanmin(depth_map), vmax=np.nanmax(depth_map))
+            axis.imshow(depth_map, cmap='plasma_r', vmin=np.nanmin(depth_map), vmax=np.nanmax(depth_map))
 
-        axis.set_title('ToF camera depth map')
         axis.axis("image")
         axis.grid(False)
-        figure.colorbar(map_img, ax=axis, label='Distance to camera')
+        axis.axis("off")
 
         plt.savefig(filename)
         plt.close(figure)
