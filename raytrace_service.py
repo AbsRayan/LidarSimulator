@@ -111,16 +111,10 @@ class RaytraceService:
                 intensity=2.0
             )
 
-            plane = Plane(
-                point=np.array([0.0, -0.3, 0.0]),
-                normal=np.array([0.0, 1.0, 0.0]),
-                color=np.array([80, 100, 80], dtype=np.float64)
-            )
-
             renderer = MeshRenderer(
                 mesh=scene_mesh,
                 camera=camera,
-                plane=plane,
+                plane=None,
                 light=light
             )
 
