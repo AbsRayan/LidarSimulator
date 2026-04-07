@@ -2,6 +2,8 @@ import os
 import datetime
 from PyQt6.QtWidgets import QFileDialog, QMessageBox, QApplication
 from config_loader import ConfigLoader
+from tof_service import ToFService
+from raytrace_service import RaytraceService
 
 class SimulationDefaults:
     AIRPLANE_POS = [22.0, 0.0, 0.0]
@@ -13,6 +15,9 @@ class SimulationController:
     def __init__(self, view):
         self.view = view
         self.gl_scene = self.view.gl_scene
+        
+        self.tof_service = ToFService()
+        self.raytrace_service = RaytraceService()
 
         self.gl_scene.airplane_pos = SimulationDefaults.AIRPLANE_POS.copy()
         self.gl_scene.airplane_rot = SimulationDefaults.AIRPLANE_ROT.copy()
@@ -85,7 +90,12 @@ class SimulationController:
         self.view.tof_button.setEnabled(False)
         QApplication.processEvents()
 
-        self.gl_scene.calculate_tof()
+        self.tof_service.calculate_tof(
+            self.gl_scene.scene_state, 
+            self.gl_scene.camera_controller, 
+            self.gl_scene.airplane_mesh
+        )
+        self.gl_scene.update()
 
         output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output_images")
         os.makedirs(output_dir, exist_ok=True)
@@ -98,8 +108,7 @@ class SimulationController:
         scene_img.save(render_path)
         print(f"Рендер сцены сохранен в {render_path}")
 
-        if hasattr(self.gl_scene, 'save_depth_map'):
-            self.gl_scene.save_depth_map(depth_path)
+        self.tof_service.save_depth_map(self.gl_scene.scene_state, depth_path)
 
         self.view.tof_button.setText("📷 Снимок ToF камерой")
         self.view.tof_button.setEnabled(True)
@@ -114,12 +123,17 @@ class SimulationController:
         timestamp = datetime.datetime.now().strftime("%H-%M-%S")
         render_path = os.path.join(output_dir, f"raytrace_render_{timestamp}.png")
 
-        success = self.gl_scene.calculate_raytrace(render_path, width=400, height=300)
+        img = self.raytrace_service.calculate_raytrace(
+            self.gl_scene.scene_state, 
+            self.gl_scene.camera_controller, 
+            width=400, height=300
+        )
 
         self.view.raytrace_button.setText("🎨 Рендер (Raytracer)")
         self.view.raytrace_button.setEnabled(True)
 
-        if success:
+        if img is not None:
+            img.save(render_path)
             QMessageBox.information(
                 self.view, "Raytracer",
                 f"Рендер завершён!\nСохранён в:\n{render_path}"
