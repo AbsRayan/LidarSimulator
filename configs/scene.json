@@ -7,6 +7,14 @@
     "building2": "textures/building2.jpg",
     "airplane": "textures/MiG29.png"
   },
+  "tof_camera": {
+    "position": [0.0, 5.0, 10.0],
+    "target": [22.0, 0.0, 0.0],
+    "fov": 45.0,
+    "near": 0.1,
+    "far": 100.0,
+    "resolution": [100, 100]
+  },
   "objects": [
     {
       "id": "ground",

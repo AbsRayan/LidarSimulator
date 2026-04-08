@@ -2,11 +2,10 @@ import sys
 import os
 import numpy as np
 from scene_state import SceneState
-from camera_controller import CameraController
-from geometry_utils import build_rotation_matrix, compute_mesh_normalization, transform_vertex
+from geometry_utils import build_rotation_matrix, compute_mesh_normalization
 
 class ToFService:
-    def calculate_tof(self, scene_state: SceneState, camera_controller: CameraController):
+    def calculate_tof(self, scene_state: SceneState):
         if not getattr(scene_state, 'scene_config', None) or not scene_state.scene_config.objects:
             return
             
@@ -86,23 +85,45 @@ class ToFService:
                 
             figure = ToFFigure(triangles=triangles, use_octree=True)
             
-            direction = np.array(scene_state.tof_dir)
+            tof_camera = scene_state.scene_config.tof_camera
+            position = np.array(tof_camera.position, dtype=np.float64)
+            target = np.array(tof_camera.target, dtype=np.float64)
+            direction = target - position
             if np.linalg.norm(direction) < 1e-5:
                 direction = np.array([0.0, 0.0, -1.0])
+
+            width, height = [int(value) for value in tof_camera.resolution[:2]]
+            near_plane = min(float(tof_camera.near), float(tof_camera.far))
+            far_plane = max(float(tof_camera.near), float(tof_camera.far))
                 
             cam = ToFCamera(
-                position=ToFPoint(np.array(scene_state.tof_pos)),
-                width=100,
-                height=100,
+                position=ToFPoint(position),
+                width=width,
+                height=height,
                 direction=direction,
-                fov=camera_controller.fov
+                fov=float(tof_camera.fov)
             )
             
             cam.get_points_and_distances_to_object(figure, parallel=False, use_octree=True)
-            scene_state.tof_distances = cam.object_distances.copy()
-            scene_state.tof_resolution = (100, 100)
-            
-            scene_state.tof_points = cam.object_points if cam.object_points is not None else np.array([])
+            raw_distances = cam.object_distances.copy()
+            valid_hits_mask = ~np.isnan(raw_distances)
+            in_range_hits_mask = raw_distances[valid_hits_mask] >= near_plane
+            in_range_hits_mask &= raw_distances[valid_hits_mask] <= far_plane
+
+            filtered_distances = raw_distances.copy()
+            filtered_distances[valid_hits_mask] = np.where(
+                in_range_hits_mask,
+                raw_distances[valid_hits_mask],
+                np.nan
+            )
+
+            scene_state.tof_distances = filtered_distances
+            scene_state.tof_resolution = (width, height)
+            scene_state.tof_points = (
+                cam.object_points[in_range_hits_mask]
+                if cam.object_points is not None and cam.object_points.size
+                else np.array([])
+            )
             
         except ImportError as e:
             print(f"Ошибка загрузки модулей ToF: {e}")

@@ -31,6 +31,22 @@ class SimulationController:
         self._connect_signals()
         self._load_configs()
 
+    @staticmethod
+    def _set_spin_values(spins, values):
+        for spin, value in zip(spins, values):
+            signals_blocked = spin.blockSignals(True)
+            spin.setValue(value)
+            spin.blockSignals(signals_blocked)
+
+    def _apply_tof_camera(self, position, target, update_view: bool = True):
+        direction = [target[i] - position[i] for i in range(3)]
+        self.gl_scene.tof_pos = position.copy()
+        self.gl_scene.tof_dir = direction
+
+        if update_view:
+            self._set_spin_values(self.view.tof_pos_spins, position)
+            self._set_spin_values(self.view.tof_target_spins, target)
+
     def _connect_signals(self):
         for spin in self.view.airplane_spins:
             spin.valueChanged.connect(self.update_airplane_pos)
@@ -55,9 +71,13 @@ class SimulationController:
     def update_tof_pos(self):
         pos = [spin.value() for spin in self.view.tof_pos_spins]
         target = [spin.value() for spin in self.view.tof_target_spins]
-        direction = [target[i] - pos[i] for i in range(3)]
-        self.gl_scene.tof_pos = pos
-        self.gl_scene.tof_dir = direction
+        self._apply_tof_camera(pos, target, update_view=False)
+
+        scene_config = getattr(self.gl_scene.scene_state, 'scene_config', None)
+        if scene_config is not None and scene_config.tof_camera is not None:
+            scene_config.tof_camera.position = pos.copy()
+            scene_config.tof_camera.target = target.copy()
+
         self.gl_scene.update()
 
     def load_camera_config(self):
@@ -92,8 +112,7 @@ class SimulationController:
         QApplication.processEvents()
 
         self.tof_service.calculate_tof(
-            self.gl_scene.scene_state, 
-            self.gl_scene.camera_controller
+            self.gl_scene.scene_state
         )
         self.gl_scene.update()
 
@@ -162,6 +181,9 @@ class SimulationController:
         try:
             self.gl_scene.scene_state.scene_config = load_scene(scene_path)
             print(f"Loaded JSON config (Scene) with {len(self.gl_scene.scene_state.scene_config.objects)} objects.")
+            tof_camera = self.gl_scene.scene_state.scene_config.tof_camera
+            self.gl_scene.scene_state.tof_resolution = tuple(tof_camera.resolution)
+            self._apply_tof_camera(tof_camera.position, tof_camera.target)
             self.gl_scene.update()
         except Exception as e:
             import traceback

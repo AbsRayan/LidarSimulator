@@ -2,7 +2,13 @@ import json
 import os
 import numpy as np
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List
+
+
+def _parse_vector(values, default: List[float], cast_type=float):
+    if not isinstance(values, list) or len(values) != len(default):
+        return default.copy()
+    return [cast_type(value) for value in values]
 
 @dataclass
 class SceneObject:
@@ -90,10 +96,21 @@ class SceneObject:
             
         return tris
 
+
+@dataclass
+class ToFCameraConfig:
+    position: List[float] = field(default_factory=lambda: [0.0, 5.0, 10.0])
+    target: List[float] = field(default_factory=lambda: [22.0, 0.0, 0.0])
+    fov: float = 45.0
+    near: float = 0.1
+    far: float = 100.0
+    resolution: List[int] = field(default_factory=lambda: [100, 100])
+
 @dataclass
 class SceneConfig:
     objects: List[SceneObject]
     textures: dict = field(default_factory=dict)
+    tof_camera: ToFCameraConfig = field(default_factory=ToFCameraConfig)
 
 def load_scene(config_path: str) -> SceneConfig:
     if not os.path.exists(config_path):
@@ -121,5 +138,14 @@ def load_scene(config_path: str) -> SceneConfig:
         objs.append(obj)
         
     textures = data.get("textures", {})
-        
-    return SceneConfig(objects=objs, textures=textures)
+    tof_data = data.get("tof_camera", {})
+    tof_camera = ToFCameraConfig(
+        position=_parse_vector(tof_data.get("position"), [0.0, 5.0, 10.0]),
+        target=_parse_vector(tof_data.get("target"), [22.0, 0.0, 0.0]),
+        fov=float(tof_data.get("fov", 45.0)),
+        near=float(tof_data.get("near", 0.1)),
+        far=float(tof_data.get("far", 100.0)),
+        resolution=_parse_vector(tof_data.get("resolution"), [100, 100], int)
+    )
+
+    return SceneConfig(objects=objs, textures=textures, tof_camera=tof_camera)
