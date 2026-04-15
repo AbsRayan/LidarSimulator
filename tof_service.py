@@ -1,29 +1,58 @@
-import sys
+import importlib.util
 import os
+import sys
 import numpy as np
 from scene_state import SceneState
 from geometry_utils import build_rotation_matrix, compute_mesh_normalization
 
 class ToFService:
+    def __init__(self):
+        self._last_camera = None
+
+    @staticmethod
+    def _load_tof_dependencies():
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        geometry_path = os.path.join(base_dir, "geometry.py")
+        tof_modeling_path = os.path.join(base_dir, "tof_modeling.py")
+
+        geometry_spec = importlib.util.spec_from_file_location("_tof_geometry_module", geometry_path)
+        if geometry_spec is None or geometry_spec.loader is None:
+            raise ImportError(f"Cannot load geometry module from {geometry_path}")
+        geometry_module = importlib.util.module_from_spec(geometry_spec)
+
+        geometry_spec.loader.exec_module(geometry_module)
+
+        previous_geometry_module = sys.modules.get("geometry")
+        sys.modules["geometry"] = geometry_module
+
+        try:
+            tof_spec = importlib.util.spec_from_file_location("_tof_modeling_module", tof_modeling_path)
+            if tof_spec is None or tof_spec.loader is None:
+                raise ImportError(f"Cannot load ToF module from {tof_modeling_path}")
+            tof_module = importlib.util.module_from_spec(tof_spec)
+
+            tof_spec.loader.exec_module(tof_module)
+        finally:
+            if previous_geometry_module is not None:
+                sys.modules["geometry"] = previous_geometry_module
+            else:
+                sys.modules.pop("geometry", None)
+
+        return (
+            geometry_module.Point,
+            geometry_module.Triangle,
+            geometry_module.Figure,
+            tof_module.ToFCamera,
+        )
+
     def calculate_tof(self, scene_state: SceneState):
         if not getattr(scene_state, 'scene_config', None) or not scene_state.scene_config.objects:
+            self._last_camera = None
             return
             
         try:
-            tof_path = os.path.join(os.path.dirname(__file__), 'tof_camera')
-            old_path = list(sys.path)
-            old_geometry = sys.modules.pop('geometry', None)
-            
-            try:
-                sys.path.insert(0, tof_path)
-                from geometry import Point as ToFPoint, Triangle as ToFTriangle, Figure as ToFFigure
-                from tof_modeling import ToFCamera
-            finally:
-                sys.path = old_path
-                sys.modules.pop('geometry', None)
-                if old_geometry is not None:
-                    sys.modules['geometry'] = old_geometry
-                    
+            ToFPoint, ToFTriangle, ToFFigure, ToFCamera = self._load_tof_dependencies()
+
             import stl_loader
             parsed_stls = {}
             triangles = []
@@ -105,6 +134,7 @@ class ToFService:
             )
             
             cam.get_points_and_distances_to_object(figure, parallel=False, use_octree=True)
+            self._last_camera = cam
             raw_distances = cam.object_distances.copy()
             valid_hits_mask = ~np.isnan(raw_distances)
             in_range_hits_mask = raw_distances[valid_hits_mask] >= near_plane
@@ -126,13 +156,19 @@ class ToFService:
             )
             
         except ImportError as e:
+            self._last_camera = None
             print(f"Ошибка загрузки модулей ToF: {e}")
         except Exception as e:
+            self._last_camera = None
             print(f"Ошибка расчёта ToF: {e}")
 
     def save_depth_map(self, scene_state: SceneState, filename="depth_map.png"):
         if not hasattr(scene_state, 'tof_distances') or scene_state.tof_distances is None:
             return False
+
+        output_dir = os.path.dirname(os.path.abspath(filename))
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
 
         import matplotlib
         matplotlib.use("Agg")
@@ -156,4 +192,16 @@ class ToFService:
         plt.savefig(filename)
         plt.close(figure)
         print(f"Карта глубин сохранена в {filename}")
+        return True
+
+    def save_point_cloud_pcd(self, filename="point_cloud.pcd"):
+        if self._last_camera is None:
+            return False
+
+        output_dir = os.path.dirname(os.path.abspath(filename))
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
+
+        self._last_camera.write_point_cloud_pcd(filename)
+        print(f"Point cloud сохранён в {filename}")
         return True

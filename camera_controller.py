@@ -3,11 +3,11 @@ import math
 class CameraController:
     """Manages the logic and state for the OpenGL 3D Camera."""
     def __init__(self):
-        self.target = [0.0, 0.0, 0.0]
+        self.target = [40.0, 8.0, 0.0]
         self.distance = 15.0
         self.yaw = 45.0
         self.pitch = 30.0
-        self.pos = [0.0, 0.0, 8.0]
+        self.pos = [100.0, 18.0, 10.0]
         
         self.fov = 45.0
         self.near = 0.1

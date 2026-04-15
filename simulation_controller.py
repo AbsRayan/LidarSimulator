@@ -38,6 +38,15 @@ class SimulationController:
             spin.setValue(value)
             spin.blockSignals(signals_blocked)
 
+    @staticmethod
+    def _build_output_path(category: str, filename_prefix: str, extension: str = "png") -> str:
+        base_output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output_images")
+        category_dir = os.path.join(base_output_dir, category)
+        os.makedirs(category_dir, exist_ok=True)
+
+        timestamp = datetime.datetime.now().strftime("%H-%M-%S")
+        return os.path.join(category_dir, f"{filename_prefix}_{timestamp}.{extension}")
+
     def _apply_tof_camera(self, position, target, update_view: bool = True):
         direction = [target[i] - position[i] for i in range(3)]
         self.gl_scene.tof_pos = position.copy()
@@ -116,18 +125,16 @@ class SimulationController:
         )
         self.gl_scene.update()
 
-        output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output_images")
-        os.makedirs(output_dir, exist_ok=True)
-
-        timestamp = datetime.datetime.now().strftime("%H-%M-%S")
-        render_path = os.path.join(output_dir, f"scene_render_{timestamp}.png")
-        depth_path = os.path.join(output_dir, f"depth_map_{timestamp}.png")
+        render_path = self._build_output_path("scene_renders", "scene_render")
+        depth_path = self._build_output_path("heatmaps", "depth_map")
+        point_cloud_path = self._build_output_path("point_clouds", "point_cloud", extension="pcd")
 
         scene_img = self.gl_scene.grabFramebuffer()
         scene_img.save(render_path)
         print(f"Рендер сцены сохранен в {render_path}")
 
         self.tof_service.save_depth_map(self.gl_scene.scene_state, depth_path)
+        self.tof_service.save_point_cloud_pcd(point_cloud_path)
 
         self.view.tof_button.setText("📷 Снимок ToF камерой")
         self.view.tof_button.setEnabled(True)
@@ -137,10 +144,7 @@ class SimulationController:
         self.view.raytrace_button.setEnabled(False)
         QApplication.processEvents()
 
-        output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output_images")
-        os.makedirs(output_dir, exist_ok=True)
-        timestamp = datetime.datetime.now().strftime("%H-%M-%S")
-        render_path = os.path.join(output_dir, f"raytrace_render_{timestamp}.png")
+        render_path = self._build_output_path("raytraces", "raytrace_render")
 
         img = self.raytrace_service.calculate_raytrace(
             self.gl_scene.scene_state, 
